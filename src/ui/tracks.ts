@@ -14,6 +14,8 @@ const MARKER_COLORS = ['#5aa9e6', '#f08a5d', '#9b7bff', '#5fc77f', '#e8c547', '#
 const HDR_W = 236;
 import { generalPrefs } from '../general-prefs';
 const EDGE = 8;
+/** Touch: how long to hold a region before it can be moved (ms). */
+const HOLD_MS = 380;
 const mac = /Mac|iPhone|iPad/.test(navigator.platform);
 const K = (s: string) => (mac ? s : s.replace('⌘', 'Ctrl+').replace('⌥', 'Alt+').replace('⇧', 'Shift+'));
 
@@ -353,31 +355,29 @@ export class TracksArea {
     // pointer tool
     this.scroller.setPointerCapture(e.pointerId);
     if (r && e.pointerType === 'touch') {
-      // double tap opens the editor; long press opens the region menu
+      // Touch: a finger on a region scrolls like anywhere else. Holding still for a moment "picks up" the
+      // region (it can then be moved, trimmed or faded); releasing a picked-up region without moving opens its menu.
+      // A quick tap selects it, a double tap opens the editor.
       const now = performance.now();
       if (this.lastTap && this.lastTap.id === r.id && now - this.lastTap.t < 350) { this.lastTap = null; this.cmd.openEditor(r.id); return; }
       this.lastTap = { id: r.id, t: now };
-      this.pressAt = { x: e.clientX, y: e.clientY };
+      const x0 = e.clientX, y0 = e.clientY;
+      this.drag = { kind: 'pan', x: x0, y: y0, sl: this.scroller.scrollLeft, st: this.scroller.scrollTop };
+      this.hold = { r, x: x0, y: y0, armed: false };
       clearTimeout(this.pressTimer);
       this.pressTimer = window.setTimeout(() => {
-        const d = this.drag;
-        if (d && 'started' in d && d.started) return;
-        this.drag = null;
-        this.regionMenu(r, this.pressAt!.x, this.pressAt!.y);
-      }, 520);
+        const hd = this.hold; if (!hd || hd.r !== r) return;
+        hd.armed = true;
+        try { navigator.vibrate?.(18); } catch { /* not supported */ }
+        if (!ui.selectedRegionIds.has(r.id)) ui.selectedRegionIds = new Set([r.id]);
+        this.lifted = r.id;
+        store.emit('structure');
+        this.regionPress(r, x0, y0, false, false);
+      }, HOLD_MS);
+      return;
     }
-    if (r) {
-      if (e.shiftKey) { ui.selectedRegionIds.has(r.id) ? ui.selectedRegionIds.delete(r.id) : ui.selectedRegionIds.add(r.id); }
-      else if (!ui.selectedRegionIds.has(r.id)) ui.selectedRegionIds = new Set([r.id]);
-      store.emit('structure');
-      const edge = this.edgeZone(r, e.clientX);
-      if (edge && !isMidi(r) && this.upperHalf(e.clientY)) { this.drag = { kind: 'fade', r, side: edge === 'L' ? 'in' : 'out', started: false }; return; }
-      if (edge === 'L' && r.flex?.on && !isMidi(r)) { toast('Turn Flex off to trim the start of this region'); return; }
-      if (edge) { this.drag = { kind: edge === 'R' ? 'resizeR' : 'resizeL', r, origStart: r.start, origLen: r.length, origOffset: r.offset, origNotes: r.notes?.map(n => ({ ...n })), origTakes: r.takes?.map(t => ({ ...t })), origComp: r.takes ? compOf(r).map(c => ({ ...c })) : undefined, x0: e.clientX, started: false }; return; }
-      const idx = new Map(store.visibleTracks().map((t, i) => [t.id, i]));
-      const orig = new Map(store.selectedRegions().map(x => [x.id, { start: x.start, track: idx.get(x.trackId)! }]));
-      this.drag = { kind: 'move', anchor: r, orig, x0: e.clientX, y0: e.clientY, copy: e.altKey, started: false };
-    } else if (e.pointerType === 'touch') {
+    if (r) this.regionPress(r, e.clientX, e.clientY, e.shiftKey, e.altKey);
+    else if (e.pointerType === 'touch') {
       this.drag = { kind: 'pan', x: e.clientX, y: e.clientY, sl: this.scroller.scrollLeft, st: this.scroller.scrollTop };
     } else {
       const base = e.shiftKey ? new Set(ui.selectedRegionIds) : new Set<string>();
@@ -388,12 +388,36 @@ export class TracksArea {
     }
   }
 
+  /** Touch hold state: the region under the finger, and whether the hold time has passed. */
+  private hold: { r: Region; x: number; y: number; armed: boolean } | null = null;
+  /** Region shown "picked up" (touch). */
+  lifted: string | null = null;
+
+  /** Starts moving / trimming / fading a region from a press at (x, y) (mouse down, or a touch hold). */
+  private regionPress(r: Region, x: number, y: number, shift: boolean, alt: boolean) {
+    const { store } = this.cmd, ui = store.ui;
+    {
+      if (shift) { ui.selectedRegionIds.has(r.id) ? ui.selectedRegionIds.delete(r.id) : ui.selectedRegionIds.add(r.id); }
+      else if (!ui.selectedRegionIds.has(r.id)) ui.selectedRegionIds = new Set([r.id]);
+      store.emit('structure');
+      const edge = this.edgeZone(r, x);
+      if (edge && !isMidi(r) && this.upperHalf(y)) { this.drag = { kind: 'fade', r, side: edge === 'L' ? 'in' : 'out', started: false }; return; }
+      if (edge === 'L' && r.flex?.on && !isMidi(r)) { toast('Turn Flex off to trim the start of this region'); return; }
+      if (edge) { this.drag = { kind: edge === 'R' ? 'resizeR' : 'resizeL', r, origStart: r.start, origLen: r.length, origOffset: r.offset, origNotes: r.notes?.map(n => ({ ...n })), origTakes: r.takes?.map(t => ({ ...t })), origComp: r.takes ? compOf(r).map(c => ({ ...c })) : undefined, x0: x, started: false }; return; }
+      const idx = new Map(store.visibleTracks().map((t, i) => [t.id, i]));
+      const orig = new Map(store.selectedRegions().map(x => [x.id, { start: x.start, track: idx.get(x.trackId)! }]));
+      this.drag = { kind: 'move', anchor: r, orig, x0: x, y0: y, copy: alt, started: false };
+    }
+  }
+
   private onMove(e: PointerEvent) {
     if (e.pointerType === 'touch' && this.touches.has(e.pointerId)) {
       this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (this.pinch) { this.movePinch(); return; }
     }
     if (this.pressAt && Math.hypot(e.clientX - this.pressAt.x, e.clientY - this.pressAt.y) > 8) { clearTimeout(this.pressTimer); this.pressAt = null; }
+    // touch: moving before the hold time means scrolling, not picking up the region
+    if (this.hold && !this.hold.armed && Math.hypot(e.clientX - this.hold.x, e.clientY - this.hold.y) > 8) { clearTimeout(this.pressTimer); this.hold = null; }
     const { store } = this.cmd;
     const d = this.drag;
     if (!d) { this.updateCursor(e); return; }
@@ -489,6 +513,17 @@ export class TracksArea {
     clearTimeout(this.pressTimer); this.pressAt = null;
     if (this.pinch) { if (this.touches.size < 2) this.pinch = null; return; }
     const d = this.drag; this.drag = null;
+    const hd = this.hold; this.hold = null;
+    if (this.lifted) { this.lifted = null; this.dirty = true; }
+    if (hd) {
+      const { store } = this.cmd;
+      if (!hd.armed && d?.kind === 'pan') {
+        // quick tap: select the region
+        if (store.ui.selectedRegionIds.size !== 1 || !store.ui.selectedRegionIds.has(hd.r.id)) { store.ui.selectedRegionIds = new Set([hd.r.id]); store.emit('structure'); }
+        return;
+      }
+      if (hd.armed && !(d && 'started' in d && d.started)) { this.regionMenu(hd.r, hd.x, hd.y); return; }
+    }
     if (!d) return;
     const { store } = this.cmd;
     if ((d.kind === 'resizeR' || d.kind === 'resizeL') && d.started) { const r = d.r; r.fadeIn = Math.min(r.fadeIn ?? 0, r.length); r.fadeOut = Math.min(r.fadeOut ?? 0, r.length - (r.fadeIn ?? 0)); }
@@ -504,7 +539,7 @@ export class TracksArea {
     // a pinch cancels whatever the first finger started
     const d = this.drag; this.drag = null;
     if (d && 'started' in d && d.started) { this.cmd.store.undo(); }
-    clearTimeout(this.pressTimer); this.pressAt = null;
+    clearTimeout(this.pressTimer); this.pressAt = null; this.hold = null; this.lifted = null;
     const rect = this.scroller.getBoundingClientRect();
     const mx = (a.x + b.x) / 2 - rect.left;
     this.pinch = { d0: Math.max(10, Math.abs(a.x - b.x)), ppb0: this.ppb, beat: (mx + this.scroller.scrollLeft) / this.ppb, x: mx };
@@ -990,7 +1025,8 @@ export class TracksArea {
         if (fo > 1) { const xe = x + rw; g.beginPath(); g.moveTo(xe, y + rh); g.lineTo(xe - fo, y + headH); g.lineTo(xe, y + headH); g.closePath(); g.fill(); g.beginPath(); g.moveTo(xe, y + rh); g.lineTo(xe - fo, y + headH); g.stroke(); }
       }
       g.restore();
-      g.strokeStyle = sel ? '#ffffff' : col; g.lineWidth = sel ? 1.5 : 1;
+      const lifted = this.lifted === r.id || (!!this.lifted && sel);
+      g.strokeStyle = lifted ? '#ffd166' : sel ? '#ffffff' : col; g.lineWidth = lifted ? 3 : sel ? 1.5 : 1;
       g.beginPath(); g.roundRect(x + 0.5, y + 0.5, Math.max(1, rw - 1), rh - 1, 4); g.stroke();
     }
     if (store.ui.showAuto) this.drawAutomation(g, w, H);

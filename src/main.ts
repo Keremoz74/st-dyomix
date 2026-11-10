@@ -33,7 +33,11 @@ const cmd = new Commands(store, engine);
 
 if (innerWidth < 900) store.ui.showInspector = false;
 loadPrefs(store.ui);
-if (matchMedia('(pointer: coarse)').matches) store.ui.trackH = 76;
+// touch screens: taller tracks for fingers; phones held sideways get compact ones (and adjust on rotation)
+const shortScreen = matchMedia('(pointer: coarse) and (max-height: 500px)');
+if (matchMedia('(pointer: coarse)').matches) store.ui.trackH = shortScreen.matches ? 54 : 76;
+shortScreen.addEventListener?.('change', () => { if (matchMedia('(pointer: coarse)').matches) { store.ui.trackH = shortScreen.matches ? 54 : 76; if (shortScreen.matches) store.ui.showInspector = false; store.emit('view'); } });
+if (shortScreen.matches) store.ui.showInspector = false;
 
 const controlBar = new ControlBar(cmd);
 const inspector = new Inspector(cmd);

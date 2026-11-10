@@ -501,3 +501,31 @@ button.hdr-icon:hover { filter: brightness(1.3); }
 .np-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .np-row input { accent-color: var(--accent); width: 100%; }
 .np-val { font: 11px var(--mono); color: var(--muted); text-align: right; }
+
+/* phones held sideways (short screens): compact bars so the tracks get the room */
+@media (pointer: coarse) and (max-height: 500px) {
+  .control-bar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; gap: 4px; padding: 3px 6px; min-height: 0; }
+  .control-bar::-webkit-scrollbar, .lm-bar::-webkit-scrollbar { display: none; }
+  .control-bar > *, .lm-bar > * { flex: none; }
+  .cb-btn { width: 34px; height: 32px; }
+  .cb-btn svg { width: 16px; height: 16px; }
+  .cb-master { display: none; }
+  .cb-transport [aria-label^="Rewind"], .cb-transport [aria-label^="Forward"] { display: none; }
+  .lcd { gap: 8px; padding: 1px 8px; }
+  .lcd-label { display: none; }
+  .lcd-pos { font-size: 15px; min-width: 0; }
+  .lcd-tempo, .lcd-sig { font-size: 15px; width: auto; max-width: 54px; }
+  .lm-bar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; gap: 4px; padding: 2px 6px; min-height: 0; }
+  .lm-bar .grow { flex: 0 0 6px; }
+  .tool-btn, .sel-btn, .lm-btn { min-height: 30px; min-width: 30px; height: 30px; font-size: 12px; }
+  .proj-name { width: 96px; }
+  .saved-badge { display: none; }
+  .hdr-col { width: 136px !important; }
+  .hdr-num, .hdr-icon, .hdr-vol { display: none; }
+  .tb { width: 24px; height: 22px; line-height: 20px; font-size: 10px; }
+  .inspector { position: absolute; z-index: 20; top: 0; bottom: 0; left: 0; box-shadow: 8px 0 24px rgba(0,0,0,.4); }
+  .workspace { position: relative; }
+  .editor, .mixer { max-height: 62vh; }
+  .menu-item { height: 36px; font-size: 14px; }
+  .mt-keys { height: 90px; }
+}

@@ -1,4 +1,4 @@
-# Ozmix Studyo
+# Ozmix Studio
 
 A browser DAW (TypeScript + Web Audio) with a Logic Pro-style layout and the same key commands.
 

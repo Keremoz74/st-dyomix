@@ -1,4 +1,4 @@
-# Builds Ozmix Studyo for every platform with Tauri 2.
+# Builds Ozmix Studio for every platform with Tauri 2.
 #   Desktop: macOS (universal .dmg), Windows (.msi + setup .exe), Linux (.AppImage + .deb)
 #   Android: tablets & phones (.apk for sideloading, .aab for Google Play)
 #   iOS / iPadOS: .ipa (needs an Apple Developer account, see PACKAGING.md)
@@ -81,7 +81,7 @@ jobs:
         with:
           args: ${{ matrix.args }} ${{ inputs.native_plugins && '--features native-plugins' || '' }}
           tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
-          releaseName: 'Ozmix Studyo ${{ github.ref_name }}'
+          releaseName: 'Ozmix Studio ${{ github.ref_name }}'
           releaseDraft: true
       - uses: actions/upload-artifact@v4
         with:

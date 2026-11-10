@@ -1,6 +1,6 @@
 # Paketleme: Masaüstü, Android ve iPad
 
-Ozmix Studyo, **Tauri 2** ile yerel uygulama olarak paketlenir. DAW'ın tamamı `dist/index.html` içinde çalışır; Tauri onu her platformun kendi web motoruyla (macOS/iPadOS: WebKit, Windows: WebView2, Android: Chromium WebView, Linux: WebKitGTK) bir uygulama penceresine koyar ve kaydetme diyaloglarını ekler.
+Ozmix Studio, **Tauri 2** ile yerel uygulama olarak paketlenir. DAW'ın tamamı `dist/index.html` içinde çalışır; Tauri onu her platformun kendi web motoruyla (macOS/iPadOS: WebKit, Windows: WebView2, Android: Chromium WebView, Linux: WebKitGTK) bir uygulama penceresine koyar ve kaydetme diyaloglarını ekler.
 
 | Platform | Çıktı | Nerede derlenir |
 |---|---|---|
@@ -19,8 +19,8 @@ Ozmix Studyo, **Tauri 2** ile yerel uygulama olarak paketlenir. DAW'ın tamamı 
 **Android:** Anahtar (keystore) tanımlamazsanız APK depodaki sabit test anahtarıyla (scripts/test-signing.keystore) imzalanır; kendi cihazlarınıza kurmak ve güncellemeleri üstüne kurmak için yeterlidir (Ayarlar › “Bilinmeyen kaynaklardan yükleme” izni). Google Play için kalıcı bir anahtar oluşturun ve depoya şu **secrets**'ları ekleyin:
 
 ```bash
-keytool -genkey -v -keystore ozmix-studyo.keystore -alias upload -keyalg RSA -keysize 2048 -validity 10000
-base64 -w0 ozmix-studyo.keystore   # çıktıyı ANDROID_KEYSTORE_BASE64 olarak kaydedin
+keytool -genkey -v -keystore ozmix-studio.keystore -alias upload -keyalg RSA -keysize 2048 -validity 10000
+base64 -w0 ozmix-studio.keystore   # çıktıyı ANDROID_KEYSTORE_BASE64 olarak kaydedin
 ```
 
 `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` (= `upload`). Bu anahtar dosyasını kaybetmeyin: güncellemeler aynı anahtarla imzalanmalıdır.
@@ -32,7 +32,7 @@ base64 -w0 ozmix-studyo.keystore   # çıktıyı ANDROID_KEYSTORE_BASE64 olarak 
 | `APPLE_TEAM_ID` | Developer hesabınızdaki 10 karakterlik Team ID |
 | `IOS_CERTIFICATE` | “Apple Distribution” sertifikasının `.p12` dosyası, base64 |
 | `IOS_CERTIFICATE_PASSWORD` | `.p12` parolası |
-| `IOS_MOBILE_PROVISION` | `com.ozmix.studyo` için App Store provisioning profile, base64 |
+| `IOS_MOBILE_PROVISION` | `com.ozmix.studio` için App Store provisioning profile, base64 |
 | `APP_STORE_API_KEY_ID`, `APP_STORE_API_ISSUER`, `APP_STORE_API_KEY` | (isteğe bağlı) App Store Connect API anahtarı: verilirse IPA otomatik TestFlight'a yüklenir |
 
 **macOS imzalama (isteğe bağlı):** İmzasız `.dmg` çalışır ama ilk açılışta sağ tık › Aç demek gerekir. İmzalı/noter onaylı sürüm için `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD` (uygulamaya özel parola), `APPLE_TEAM_ID` ekleyin.
@@ -74,7 +74,7 @@ npm run ios:build      # IPA
 
 ## Dosyalar
 
-- `src-tauri/tauri.conf.json`: uygulama adı, sürüm, kimlik (`com.ozmix.studyo`), pencere boyutları
+- `src-tauri/tauri.conf.json`: uygulama adı, sürüm, kimlik (`com.ozmix.studio`), pencere boyutları
 - `src-tauri/Info.plist` / `Info.ios.plist` / `Entitlements.plist`: macOS/iPadOS mikrofon izni, arka planda ses, iPad yönleri
 - `src-tauri/capabilities/default.json`: web tarafının kullanabileceği yerel izinler (yalnızca kaydet/aç diyaloğu + seçilen dosyaya yazma)
 - `scripts/android-setup.mjs`: üretilen Android projesine mikrofon izinlerini ekler

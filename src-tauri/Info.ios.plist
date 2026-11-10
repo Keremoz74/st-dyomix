@@ -4,7 +4,7 @@
 <plist version="1.0">
 <dict>
   <key>NSMicrophoneUsageDescription</key>
-  <string>Ozmix Studyo uses the microphone or audio interface input to record audio tracks.</string>
+  <string>Ozmix Studio uses the microphone or audio interface input to record audio tracks.</string>
   <key>UIBackgroundModes</key>
   <array>
     <string>audio</string>

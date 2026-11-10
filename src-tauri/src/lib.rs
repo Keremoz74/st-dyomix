@@ -16,5 +16,5 @@ pub fn run() {
             native::native_params
         ])
         .run(tauri::generate_context!())
-        .expect("error while running Ozmix Studyo");
+        .expect("error while running Ozmix Studio");
 }

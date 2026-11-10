@@ -19,12 +19,12 @@ else
 fi
 
 "$BT/zipalign" -f -p 4 "$APK" "$OUT/aligned.apk"
-"$BT/apksigner" sign --ks "$KS" --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --ks-key-alias "$ALIAS" --out "$OUT/OzmixStudyo-$KIND.apk" "$OUT/aligned.apk"
+"$BT/apksigner" sign --ks "$KS" --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --ks-key-alias "$ALIAS" --out "$OUT/OzmixStudio-$KIND.apk" "$OUT/aligned.apk"
 rm "$OUT/aligned.apk"
-"$BT/apksigner" verify "$OUT/OzmixStudyo-$KIND.apk"
+"$BT/apksigner" verify "$OUT/OzmixStudio-$KIND.apk"
 
 if [ -n "$AAB" ]; then
-  cp "$AAB" "$OUT/OzmixStudyo-$KIND.aab"
-  jarsigner -keystore "$KS" -storepass "$PASS" -keypass "$PASS" "$OUT/OzmixStudyo-$KIND.aab" "$ALIAS"
+  cp "$AAB" "$OUT/OzmixStudio-$KIND.aab"
+  jarsigner -keystore "$KS" -storepass "$PASS" -keypass "$PASS" "$OUT/OzmixStudio-$KIND.aab" "$ALIAS"
 fi
 ls -la "$OUT"

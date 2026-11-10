@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    ozmix_studyo_lib::run()
+    ozmix_studio_lib::run()
 }

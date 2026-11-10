@@ -1,13 +1,13 @@
 [package]
-name = "ozmix-studyo"
+name = "ozmix-studio"
 version = "0.9.0"
-description = "Ozmix Studyo: record, arrange and mix"
+description = "Ozmix Studio: record, arrange and mix"
 edition = "2021"
 rust-version = "1.77.2"
 
 [lib]
 # the mobile apps (Android / iOS) load the app as a library
-name = "ozmix_studyo_lib"
+name = "ozmix_studio_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

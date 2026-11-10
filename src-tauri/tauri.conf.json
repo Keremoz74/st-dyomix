@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Ozmix Studyo",
+  "productName": "Ozmix Studio",
   "version": "0.9.0",
-  "identifier": "com.ozmix.studyo",
+  "identifier": "com.ozmix.studio",
   "build": {
     "frontendDist": "../dist",
     "beforeBuildCommand": "bun build.mjs",
@@ -12,7 +12,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Ozmix Studyo",
+        "title": "Ozmix Studio",
         "width": 1440,
         "height": 900,
         "minWidth": 1024,
@@ -32,8 +32,8 @@
     "targets": "all",
     "category": "Music",
     "shortDescription": "Record, arrange and mix music",
-    "longDescription": "Ozmix Studyo is a recording, arranging and mixing app with a Logic-style workflow: audio and MIDI tracks, Piano Roll, Score, Step Sequencer, mixer with plug-ins, automation and movie sync.",
-    "copyright": "© 2026 Ozmix Studyo",
+    "longDescription": "Ozmix Studio is a recording, arranging and mixing app with a Logic-style workflow: audio and MIDI tracks, Piano Roll, Score, Step Sequencer, mixer with plug-ins, automation and movie sync.",
+    "copyright": "© 2026 Ozmix Studio",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

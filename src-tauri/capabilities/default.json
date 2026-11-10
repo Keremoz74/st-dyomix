@@ -1,0 +1,15 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Save dialogs and writing the chosen file (Save Project, Bounce).",
+  "windows": ["main"],
+  "platforms": ["macOS", "windows", "linux", "android", "iOS"],
+  "permissions": [
+    "core:default",
+    "dialog:default",
+    "dialog:allow-save",
+    "dialog:allow-open",
+    "fs:default",
+    "fs:allow-write-file"
+  ]
+}

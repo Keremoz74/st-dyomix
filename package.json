@@ -1,0 +1,24 @@
+{
+  "name": "untitled-daw",
+  "version": "0.9.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun build.mjs",
+    "typecheck": "tsc -p .",
+    "tauri": "tauri",
+    "desktop:dev": "bun build.mjs && tauri dev",
+    "desktop:build": "tauri build",
+    "android:init": "tauri android init && node scripts/android-setup.mjs && tauri icon app-icon.png --ios-color \"#1e2027\"",
+    "android:build": "tauri android build --apk --aab",
+    "android:dev": "tauri android dev",
+    "ios:init": "tauri ios init && tauri icon app-icon.png --ios-color \"#1e2027\"",
+    "ios:build": "tauri ios build",
+    "ios:dev": "tauri ios dev",
+    "icons": "tauri icon app-icon.png --ios-color \"#1e2027\""
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.9.0",
+    "typescript": "^5.6.0"
+  }
+}

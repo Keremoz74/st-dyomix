@@ -97,6 +97,8 @@ jobs:
   android:
     name: Android (tablets & phones)
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write   # to publish the APK on the `apk` branch
     env:
       NDK_VERSION: 27.0.12077973
     steps:
@@ -132,6 +134,17 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: bash scripts/android-sign.sh
+      # the latest APK also goes to the `apk` branch, so it can be fetched with plain git (no artifact download needed)
+      - name: Publish APK to the apk branch
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p /tmp/apkbr && cp out/android/*.apk /tmp/apkbr/
+          cd /tmp/apkbr
+          git init -q -b apk
+          git add .
+          git -c user.name="github-actions" -c user.email="actions@github.com" commit -qm "APK from ${GITHUB_SHA::7}"
+          git push -f "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" apk
       - uses: actions/upload-artifact@v4
         with:
           name: android

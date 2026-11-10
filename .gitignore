@@ -7,3 +7,6 @@ src-tauri/gen/
 *.p12
 *.mobileprovision
 .DS_Store
+
+# fixed test-signing key so test APKs install as updates over each other (not for store releases)
+!scripts/test-signing.keystore

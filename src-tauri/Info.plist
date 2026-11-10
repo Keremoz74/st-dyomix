@@ -4,7 +4,7 @@
 <plist version="1.0">
 <dict>
   <key>NSMicrophoneUsageDescription</key>
-  <string>Untitled DAW uses the microphone or audio interface input to record audio tracks.</string>
+  <string>Ozmix Studyo uses the microphone or audio interface input to record audio tracks.</string>
   <key>LSApplicationCategoryType</key>
   <string>public.app-category.music</string>
 </dict>

@@ -122,10 +122,29 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], level = 0) {
     menu.style.top = (r.bottom + mh + 4 > innerHeight ? Math.max(4, r.top - mh - 4) : r.bottom + 4) + 'px';
   }
   if (level === 0) setTimeout(() => document.addEventListener('pointerdown', outside, true));
-  function outside(e: Event) { if (!(e.target as Element).closest?.('.menu')) closeMenus(); }
+  function outside(e: Event) { if (!(e.target as Element).closest?.('.menu')) { closeMenus(); swallowGesture(e); } }
   (menu as any)._cleanup = () => document.removeEventListener('pointerdown', outside, true);
   return menu;
 }
+/**
+ * Like on a Mac: a tap/click outside an open menu only closes the menu. This swallows the rest of that
+ * gesture (release, click) so nothing underneath reacts, and tapping the menu's own button closes it.
+ */
+export function swallowGesture(e: Event) {
+  e.preventDefault(); e.stopPropagation(); (e as any).stopImmediatePropagation?.();
+  const types = ['pointerup', 'pointercancel', 'mousedown', 'mouseup', 'click', 'dblclick', 'contextmenu'];
+  let timer = 0;
+  const done = () => { clearTimeout(timer); types.forEach(t => removeEventListener(t, block, true)); };
+  const block = (ev: Event) => {
+    ev.stopPropagation(); (ev as any).stopImmediatePropagation?.();
+    if (ev.cancelable && ev.type !== 'pointerup' && ev.type !== 'pointercancel') ev.preventDefault();
+    if (ev.type === 'click' || ev.type === 'contextmenu') done();
+    else if (ev.type === 'pointerup' || ev.type === 'pointercancel') { clearTimeout(timer); timer = window.setTimeout(done, 350); }
+  };
+  types.forEach(t => addEventListener(t, block, true));
+  timer = window.setTimeout(done, 8000);
+}
+
 export function closeMenus() {
   document.querySelectorAll('.menu').forEach(m => { (m as any)._cleanup?.(); m.remove(); });
 }

@@ -1,7 +1,7 @@
 // Control bar, Inspector, Mixer and the floating Tool menu.
 import { TOOLS } from '../model';
 import { Commands } from '../commands';
-import { h, icon, iconBtn, openMenu, inlineEdit, MenuItem } from './dom';
+import { h, icon, iconBtn, openMenu, inlineEdit, MenuItem, swallowGesture } from './dom';
 import { channelStrip, StripHandle } from './strip';
 
 export class ControlBar {
@@ -194,7 +194,7 @@ export class ToolMenu {
     this.el.style.top = `${Math.max(4, Math.min(y, innerHeight - hh - 4))}px`;
     setTimeout(() => document.addEventListener('pointerdown', this.outside, true));
   }
-  private outside = (e: Event) => { if (this.el && !this.el.contains(e.target as Node)) this.close(); };
+  private outside = (e: Event) => { if (this.el && !this.el.contains(e.target as Node)) { this.close(); swallowGesture(e); } };
   pick(id: (typeof TOOLS)[number]['id']) { this.cmd.setTool(id); this.close(); }
   key(k: string): boolean {
     const t = TOOLS.find(t => t.key.toLowerCase() === k.toLowerCase());

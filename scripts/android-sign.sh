@@ -13,18 +13,18 @@ if [ -n "${KEYSTORE_B64:-}" ]; then
   echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
   KS="$RUNNER_TEMP/release.keystore"; PASS="$KEYSTORE_PASSWORD"; ALIAS="$KEY_ALIAS"; KIND=release
 else
-  echo "No keystore secret: signing with a temporary test key (fine for installing on your own tablet, not for Google Play)."
-  KS="$RUNNER_TEMP/test.keystore"; PASS=android; ALIAS=test; KIND=test
-  keytool -genkeypair -keystore "$KS" -storepass "$PASS" -keypass "$PASS" -alias "$ALIAS" -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Untitled DAW Test"
+  # the repo's fixed test key: every test APK has the same signature, so it installs as an update
+  echo "No keystore secret: signing with the repo's test key (fine for your own devices, not for Google Play)."
+  KS="scripts/test-signing.keystore"; PASS=ozmixtest; ALIAS=test; KIND=test
 fi
 
 "$BT/zipalign" -f -p 4 "$APK" "$OUT/aligned.apk"
-"$BT/apksigner" sign --ks "$KS" --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --ks-key-alias "$ALIAS" --out "$OUT/UntitledDAW-$KIND.apk" "$OUT/aligned.apk"
+"$BT/apksigner" sign --ks "$KS" --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --ks-key-alias "$ALIAS" --out "$OUT/OzmixStudyo-$KIND.apk" "$OUT/aligned.apk"
 rm "$OUT/aligned.apk"
-"$BT/apksigner" verify "$OUT/UntitledDAW-$KIND.apk"
+"$BT/apksigner" verify "$OUT/OzmixStudyo-$KIND.apk"
 
 if [ -n "$AAB" ]; then
-  cp "$AAB" "$OUT/UntitledDAW-$KIND.aab"
-  jarsigner -keystore "$KS" -storepass "$PASS" -keypass "$PASS" "$OUT/UntitledDAW-$KIND.aab" "$ALIAS"
+  cp "$AAB" "$OUT/OzmixStudyo-$KIND.aab"
+  jarsigner -keystore "$KS" -storepass "$PASS" -keypass "$PASS" "$OUT/OzmixStudyo-$KIND.aab" "$ALIAS"
 fi
 ls -la "$OUT"

@@ -8,6 +8,11 @@ name: Build apps
 on:
   workflow_dispatch:
     inputs:
+      target:
+        description: 'What to build (macOS minutes cost 10x on private repos)'
+        type: choice
+        options: [android, desktop, all]
+        default: android
       native_plugins:
         description: 'Desktop: include VST3 hosting (experimental "native-plugins" feature)'
         type: boolean
@@ -22,6 +27,7 @@ concurrency:
 jobs:
   desktop:
     name: Desktop (${{ matrix.name }})
+    if: github.event_name == 'push' || inputs.target != 'android'
     strategy:
       fail-fast: false
       matrix:
@@ -98,6 +104,7 @@ jobs:
 
   android:
     name: Android (tablets & phones)
+    if: github.event_name == 'push' || inputs.target != 'desktop'
     runs-on: ubuntu-22.04
     permissions:
       contents: write   # to publish the APK on the `apk` branch

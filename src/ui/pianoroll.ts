@@ -1,4 +1,6 @@
 // Piano Roll editor for MIDI regions (bottom editor area, opened with P or a double-click).
+import { instrumentRange } from '../audio/ranges';
+import { PlayLine } from './playline';
 import { Note, Region } from '../model';
 import { isDrumKit } from '../audio/instruments';
 import { Commands } from '../commands';
@@ -31,7 +33,7 @@ export class PianoRoll {
   private drag: Drag | null = null;
   private dirty = true;
   private lastLen = 1;
-  private shownRegion: string | null = null;
+  private shownRegion = '';
   private row = 14;
   private tabsSlot = h('span', {});
 
@@ -98,7 +100,14 @@ export class PianoRoll {
       for (const n of [...this.sel]) if (!live.has(n)) this.sel.delete(n);
     } else this.sel.clear();
     this.renderBar();
-    if (ui.showEditor && r && this.shownRegion !== r.id) { this.shownRegion = r.id; this.sel.clear(); requestAnimationFrame(() => this.scrollToRegion()); }
+    const ti = this.track?.instrument, key = r ? `${r.id}|${ti?.type}|${ti?.params?.program ?? ti?.preset ?? ''}` : '';
+    if (ui.showEditor && r && this.shownRegion !== key) {
+      const sameRegion = this.shownRegion.split('|')[0] === r.id;
+      this.shownRegion = key;
+      if (!sameRegion) this.sel.clear();
+      // new region: show its notes; same region, new instrument: jump to that instrument's range
+      requestAnimationFrame(() => this.scrollToRegion(sameRegion));
+    }
   }
 
   private renderBar() {
@@ -108,12 +117,15 @@ export class PianoRoll {
     this.info.textContent = this.sel.size ? `${this.sel.size} selected · vel ${Math.round([...this.sel].reduce((a, n) => a + n.v, 0) / this.sel.size)}` : '';
   }
 
-  private scrollToRegion() {
+  private scrollToRegion(instrumentChanged = false) {
     const r = this.region; if (!r) return;
     this.syncSize();
-    this.scroller.scrollLeft = Math.max(0, (r.start - 0.5) * this.ppb);
+    if (!instrumentChanged) this.scroller.scrollLeft = Math.max(0, (r.start - 0.5) * this.ppb);
     const notes = r.notes ?? [];
-    const mid = notes.length ? notes.reduce((a, n) => a + n.p, 0) / notes.length : (this.isDrums ? 42 : 60);
+    const range = instrumentRange(this.track?.instrument);
+    const avg = notes.length ? notes.reduce((a, n) => a + n.p, 0) / notes.length : NaN;
+    // the region's notes if they sit in the instrument's playing range, otherwise the instrument's home octave
+    const mid = notes.length && (!instrumentChanged || (avg >= range[0] && avg <= range[1])) ? avg : (range[0] + range[1]) / 2;
     const areaH = this.scroller.clientHeight - RH - VH;
     this.scroller.scrollTop = Math.max(0, (127 - mid) * this.row - areaH / 2);
     this.dirty = true;
@@ -363,9 +375,15 @@ export class PianoRoll {
     this.spacer.style.height = `${RH + 128 * this.row + VH}px`;
   }
 
+  private playLine?: PlayLine;
   frame(playhead: number) {
     if (this.el.hidden) return;
-    if (!this.dirty && !this.cmd.store.ui.playing && !this.drag) return;
+    const sto = this.cmd.store, W0 = this.scroller.clientWidth;
+    let px = this.KW + playhead * this.ppb - this.scroller.scrollLeft;
+    if (sto.ui.playing && this.region && (px > W0 - 20 || px < this.KW)) { this.scroller.scrollLeft = Math.max(0, playhead * this.ppb - 40); px = this.KW + playhead * this.ppb - this.scroller.scrollLeft; this.dirty = true; }
+    this.playLine ??= new PlayLine(this.canvas.parentElement!);
+    this.playLine.set(this.region && px >= this.KW && px <= W0 ? px : null, sto.ui.recording);
+    if (!this.dirty && !this.drag) return;
     this.dirty = false;
     this.syncSize();
     const c = this.canvas, dpr = devicePixelRatio || 1;
@@ -467,9 +485,5 @@ export class PianoRoll {
     }
     g.restore();
 
-    // playhead
-    const px = KW + playhead * ppb - sl;
-    if (px >= KW && px <= W) { g.fillStyle = this.cmd.store.ui.recording ? '#ff4d4f' : '#ffffff'; g.fillRect(Math.round(px), 0, 1, H); }
-    if (this.cmd.store.ui.playing && (px > W - 20 || px < KW)) { this.scroller.scrollLeft = Math.max(0, playhead * ppb - 40); }
   }
 }

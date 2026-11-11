@@ -123,7 +123,7 @@ export class SettingsWindow {
         this.needsRestart ? h('div', { class: 'set-note' }, 'Sample rate and buffer changes take effect after restarting the audio engine. ',
           h('button', { class: 'tool-btn', onClick: async () => { await this.cmd.autosave?.save(); location.reload(); } }, 'Restart Now')) : null),
       this.section('Sound Library',
-        h('p', { class: 'set-hint' }, `${GM.length - 1} real instruments + a GM drum kit, sampled from the FluidR3 GM SoundFont by Frank Wen (MIT / CC-BY 3.0). Each instrument downloads the first time it is used and is then kept on this device.`),
+        h('p', { class: 'set-hint' }, `${GM.length - 1} real instruments + a GM drum kit, sampled from the FluidR3 GM SoundFont by Frank Wen (MIT / CC-BY 3.0). Each instrument downloads the first time it is used and is then kept on this device. Grand Piano, Electric Piano 1 and Acoustic Bass play high-quality multi-velocity recordings: Splendid Grand Piano (Public Domain), jRhodes3d by J. Learman (CC0) and D. Smolken's double bass (CC0).`),
         (() => {
           const status = h('span', { class: 'set-hint' });
           const btn: HTMLButtonElement = h('button', { class: 'tool-btn', onClick: async () => {
@@ -136,7 +136,7 @@ export class SettingsWindow {
           const test: HTMLButtonElement = h('button', { class: 'tool-btn', onClick: async () => {
             test.disabled = true; tStatus.textContent = 'Testing Grand Piano and the drum kit…';
             const t0 = performance.now();
-            const r = await Promise.all([0, 128, 33].map(p => loadBank(p).then(b => `${GM[p][1]}: ${b.size} samples, ${bankInfo.get(`${GM[p][0]}-mp3.js`) ?? 'built in'}`).catch(e => `${GM[p][1]}: ${bankInfo.get(`${GM[p][0]}-mp3.js`) ?? (e as Error).message}`)));
+            const r = await Promise.all([0, 128, 32, 4].map(p => loadBank(p).then(b => `${GM[p][1]}: ${b.size} samples, ${bankInfo.get(`${GM[p][0]}-mp3.js`) ?? 'built in'}`).catch(e => `${GM[p][1]}: ${bankInfo.get(`${GM[p][0]}-mp3.js`) ?? (e as Error).message}`)));
             tStatus.textContent = `${r.join(' · ')} (${Math.round(performance.now() - t0)} ms)`;
             const sm = this.cmd.engine; const tr = this.cmd.store.project.tracks.find(x => x.instrument?.type === 'gm');
             if (tr) sm.audition(tr.id, 60, 100);

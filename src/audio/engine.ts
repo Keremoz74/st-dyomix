@@ -61,6 +61,7 @@ export class Engine {
   private micStream: MediaStream | null = null;
   private recorder: MediaRecorder | null = null;
   private recChunks: Blob[] = [];
+  private recNode: { node: AudioWorkletNode; src: MediaStreamAudioSourceNode; sink: GainNode; ch: Float32Array[][]; t0: number } | null = null;
   private recStartBeat = 0;
   private recTrackId: string | null = null;
   private recCycle: { start: number; end: number } | null = null;
@@ -606,15 +607,32 @@ export class Engine {
     if (!track.armed) { track.armed = true; store.emit('structure'); }
     this.recTrackId = track.id;
     this.recChunks = [];
-    this.recorder = new MediaRecorder(mic);
-    this.recorder.ondataavailable = e => { if (e.data.size) this.recChunks.push(e.data); };
-    this.recorder.onstop = () => this.finishRecording();
+    this.recorder = null; this.recNode = null;
+    await ensureWorklets(this.ctx);
+    if (workletsReady(this.ctx)) {
+      // preferred: raw PCM straight from the audio graph, time-stamped on the audio clock
+      const src = this.ctx.createMediaStreamSource(mic);
+      const node = new AudioWorkletNode(this.ctx, 'daw-recorder', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+      const sink = this.ctx.createGain(); sink.gain.value = 0;
+      src.connect(node); node.connect(sink); sink.connect(this.ctx.destination);
+      const rn = { node, src, sink, ch: [] as Float32Array[][], t0: -1 };
+      node.port.onmessage = e => {
+        const d = e.data;
+        if (d.ch) { if (rn.t0 < 0) rn.t0 = d.t0; rn.ch.push(d.ch); }
+        if (d.done) { src.disconnect(); node.disconnect(); sink.disconnect(); this.finishRecording(); }
+      };
+      this.recNode = rn;
+    } else {
+      this.recorder = new MediaRecorder(mic);
+      this.recorder.ondataavailable = e => { if (e.data.size) this.recChunks.push(e.data); };
+      this.recorder.onstop = () => this.finishRecording();
+    }
     ui.recording = true;
     this.recStartBeat = start;
     this.recCycle = c.on ? { ...c } : null;
     await this.play(start, ui.countIn);
     this.recCtxStart = this.ctx.currentTime;
-    this.recorder.start();
+    if (this.recNode) this.recNode.node.port.postMessage('start'); else this.recorder!.start();
     store.emit('transport');
     return null;
   }
@@ -623,15 +641,27 @@ export class Engine {
   private stopRecording() {
     this.store.ui.recording = false;
     if (this.midiRec) { this.finishMidiRecording(); return; }
-    if (this.recorder && this.recorder.state !== 'inactive') this.recorder.stop();
+    if (this.recNode) this.recNode.node.port.postMessage('stop');
+    else if (this.recorder && this.recorder.state !== 'inactive') this.recorder.stop();
   }
 
   private async finishRecording() {
     const store = this.store;
-    const blob = new Blob(this.recChunks, { type: this.recorder?.mimeType || 'audio/webm' });
     let buf: AudioBuffer;
-    try { buf = await this.ctx.decodeAudioData(await blob.arrayBuffer()); }
-    catch { window.dispatchEvent(new CustomEvent('daw-toast', { detail: 'The recording could not be decoded.' })); return; }
+    const rn = this.recNode; this.recNode = null;
+    if (rn) {
+      const frames = rn.ch.reduce((a, c) => a + c[0].length, 0);
+      if (!frames) { window.dispatchEvent(new CustomEvent('daw-toast', { detail: 'Nothing was recorded (no input signal).' })); return; }
+      const nch = Math.min(2, rn.ch[0].length);
+      buf = this.ctx.createBuffer(nch, frames, this.ctx.sampleRate);
+      for (let c = 0; c < nch; c++) { const d = buf.getChannelData(c); let o = 0; for (const blk of rn.ch) { d.set(blk[c], o); o += blk[c].length; } }
+      // the first captured frame is the real start of the file
+      if (rn.t0 >= 0) this.recCtxStart = rn.t0;
+    } else {
+      const blob = new Blob(this.recChunks, { type: this.recorder?.mimeType || 'audio/webm' });
+      try { buf = await this.ctx.decodeAudioData(await blob.arrayBuffer()); }
+      catch { window.dispatchEvent(new CustomEvent('daw-toast', { detail: 'The recording could not be decoded.' })); return; }
+    }
     const t = store.track(this.recTrackId);
     if (!t) return;
     // where the transport start sits in the file: count-in + device latency + the user's compensation

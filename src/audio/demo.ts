@@ -7,7 +7,7 @@ import { newInstrument, InstrumentState } from './instruments';
 import { gmName } from './gm';
 
 /** Bump when the demo changes: an autosaved older demo is rebuilt on open. */
-export const DEMO_VERSION = 2;
+export const DEMO_VERSION = 3;
 export const DEMO_NAME = 'Demo Song';
 
 const fx = (type: PluginType, p: Record<string, number> = {}): Insert => ({ id: uid('fx'), type, bypass: false, params: { ...defaultParams(type), ...p } });
@@ -117,7 +117,7 @@ export async function loadDemo(store: Store) {
   const drums = track('Drums', gm(128), -4, 0, -20, [
     { start: 0, notes: drumPart(BARS, true) }, { start: L, notes: drumPart(BARS, true, true) },
   ], [fx('eq', { hpf: 30, lowGain: 2, highGain: 2 }), fx('comp', { threshold: -18, ratio: 3, attack: 10, makeup: 2 })]);
-  track('Bass', gm(33), -6, 0, -40, [{ start: 0, notes: bassPart(BARS) }, { start: L, notes: bassPart(BARS) }], [fx('comp', { threshold: -16, ratio: 4, attack: 5, makeup: 2 })]);
+  track('Bass', gm(32), -6, 0, -40, [{ start: 0, notes: bassPart(BARS) }, { start: L, notes: bassPart(BARS) }], [fx('comp', { threshold: -16, ratio: 4, attack: 5, makeup: 2 })]);
   track('Grand Piano', gm(0), -6, -0.2, -12, [{ start: 0, notes: pianoPart(BARS) }, { start: L, notes: pianoPart(BARS) }]);
   track('Rhodes', gm(4), -9, 0.25, -14, [{ start: L, notes: rhodesPart(BARS) }]);
   track('Strings', gm(48, { attack: 180, release: 600 }), -11, -0.35, -8, [{ start: 0, notes: stringsPart(BARS) }, { start: L, notes: stringsPart(BARS) }]);
@@ -131,5 +131,5 @@ export async function loadDemo(store: Store) {
 /** True for an autosaved demo made by an older version (synth sounds): it gets rebuilt. */
 export const isOldDemo = (store: Store) => {
   const p = store.project;
-  return p.name === DEMO_NAME && (p.demoVersion ?? 1) < DEMO_VERSION && p.tracks.some(t => t.name === 'Lead Synth');
+  return p.name === DEMO_NAME && (p.demoVersion ?? 1) < DEMO_VERSION && p.tracks.some(t => t.name === 'Lead Synth' || t.name === 'Bass');
 };

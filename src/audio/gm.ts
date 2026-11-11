@@ -125,6 +125,38 @@ async function decode(data: ArrayBuffer): Promise<AudioBuffer> {
 }
 const b64 = (s: string) => { const bin = atob(s); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u.buffer; };
 
+/** High-quality multi-velocity packs that replace some FluidR3 instruments (built by scripts/build-hq-sounds.py). */
+export const HQ_PACKS: Record<number, { file: string; name: string; credit: string }> = {
+  0: { file: 'splendid-grand-piano', name: 'Steinway Grand (4 velocity layers)', credit: 'Splendid Grand Piano, Public Domain' },
+  4: { file: 'jrhodes', name: 'Rhodes Mark I (5 velocity layers)', credit: 'jRhodes3d by J. Learman, CC0' },
+  32: { file: 'upright-bass', name: 'Upright Bass (3 velocity layers)', credit: 'Double bass by D. Smolken, CC0' },
+};
+type Layer = { v: number; bank: Bank };
+const hqLayers = new Map<string, Layer[]>();
+async function loadHq(id: string, file: string): Promise<Bank | null> {
+  if (location.protocol === 'file:') return null;
+  try {
+    const res = await fetch(`./sounds/hq/${file}.json`);
+    if (!res.ok) return null;
+    const pack = await res.json() as { layers: { v: number; notes: Record<string, string> }[] };
+    const layers: Layer[] = [];
+    for (const l of pack.layers) {
+      const bank: Bank = new Map();
+      await Promise.all(Object.entries(l.notes).map(async ([n, d]) => {
+        try { bank.set(+n, await decode(b64(d.slice(d.indexOf(',') + 1)))); } catch { /* skip */ }
+      }));
+      if (bank.size) layers.push({ v: l.v, bank });
+    }
+    if (!layers.length) return null;
+    layers.sort((a, b) => a.v - b.v);
+    hqLayers.set(id, layers);
+    bankInfo.set(`${id}-mp3.js`, `HQ pack, ${layers.length} velocity layers, built into the app`);
+    return layers[layers.length - 1].bank;
+  } catch { return null; }
+}
+/** True when this instrument plays the high-quality pack. */
+export const isHq = (prog: number) => hqLayers.has(GM[Math.round(prog)]?.[0] ?? '');
+
 /** Loads (once) every sample of an instrument. */
 export function loadBank(prog: number): Promise<Bank> {
   const id = GM[Math.round(prog)]?.[0] ?? GM[0][0];
@@ -140,6 +172,11 @@ export function loadBank(prog: number): Promise<Bank> {
         for (const [note, name] of Object.entries(GM_DRUM_MAP)) { const b = bufs.get(name); if (b) bank.set(+note, b); }
         ready.set(id, bank); listeners.forEach(f => f(id, 'ready'));
         return bank;
+      }
+      const hq = HQ_PACKS[Math.round(prog)];
+      if (hq) {
+        const b = await loadHq(id, hq.file);
+        if (b) { ready.set(id, b); listeners.forEach(f => f(id, 'ready')); return b; }
       }
       const text = await fetchText(`${id}-mp3.js`);
       const bank: Bank = new Map();
@@ -168,7 +205,7 @@ onBankState((id, s) => { if (s === 'error') failed.add(id); else failed.delete(i
 export const bankFailed = (prog: number) => failed.has(GM[Math.round(prog)]?.[0] ?? '');
 
 /** Instruments bundled with the app (see scripts/fetch-sounds.mjs). */
-export const BUNDLED = [0, 4, 16, 24, 25, 27, 30, 33, 40, 48, 52, 56, 65, 73, 89];
+export const BUNDLED = [0, 4, 16, 24, 25, 27, 30, 32, 33, 40, 48, 52, 56, 65, 73, 89];
 /** A bundled stand-in from the same family, for when an instrument can't be loaded. */
 export function standIn(prog: number): number {
   const p = Math.round(prog), fam = Math.floor(p / 8);
@@ -196,8 +233,11 @@ export const GM_INST: InstDef = {
   presets: Object.fromEntries(GM.map((g, i) => [g[1], gmParams(i)])),
   play(ctx, dest, p, pitch, vel, when, dur): Voice {
     const prog = Math.round(p.program), id = GM[prog]?.[0];
-    const bank = id ? ready.get(id) : undefined;
+    let bank = id ? ready.get(id) : undefined;
     if (!bank) { loadBank(prog).catch(() => {}); return silent(ctx); }
+    // multi-velocity packs: the layer recorded at this loudness (real timbre change, not just volume)
+    const layers = hqLayers.get(id!);
+    if (layers) bank = (layers.find(l => vel <= l.v) ?? layers[layers.length - 1]).bank;
     const drums = prog === GM_DRUMS;
     const want = drums ? pitch : pitch + Math.round(p.tune);
     // nearest recorded note, resampled to the wanted pitch
@@ -208,7 +248,7 @@ export const GM_INST: InstDef = {
     const src = ctx.createBufferSource(); src.buffer = buf; src.playbackRate.value = Math.pow(2, (want - best) / 12);
     const env = ctx.createGain(), tone = ctx.createBiquadFilter();
     tone.type = 'lowpass'; tone.frequency.value = Math.min(20000, p.tone * (0.5 + 0.5 * vel / 127)); tone.Q.value = 0.3;
-    const sens = p.velSens / 100, lvl = Math.pow(10, p.level / 20) * 0.9 * ((1 - sens) + sens * Math.pow(vel / 127, 1.5)) * (drums ? (DRUM_GAIN[pitch] ?? 1) : 1);
+    const sens = p.velSens / 100 * (layers ? 0.5 : 1), lvl = Math.pow(10, p.level / 20) * 0.9 * ((1 - sens) + sens * Math.pow(vel / 127, 1.5)) * (drums ? (DRUM_GAIN[pitch] ?? 1) : 1);
     const A = Math.max(0.001, p.attack / 1000), R = Math.max(0.02, p.release / 1000);
     env.gain.setValueAtTime(0, when); env.gain.linearRampToValueAtTime(lvl, when + A);
     src.connect(tone); tone.connect(env); env.connect(dest);

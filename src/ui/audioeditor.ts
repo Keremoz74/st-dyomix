@@ -1,5 +1,6 @@
 // Audio Editor: waveform view of an audio region with destructive (but undoable) processing on a selection.
 // Processing writes a new copy of the audio file, so other regions that use the same file stay untouched.
+import { PlayLine } from './playline';
 import { Region } from '../model';
 import { Commands } from '../commands';
 import { h, icon, toast } from './dom';
@@ -309,9 +310,15 @@ export class AudioEditor {
     this.spacer.style.height = '1px';
   }
 
+  private playLine?: PlayLine;
   frame(playhead: number) {
     if (this.el.hidden) return;
-    if (!this.dirty && !this.cmd.store.ui.playing && !this.drag) return;
+    const st = this.cmd.store, takes = !!this.region && isFolder(this.region), W0 = this.scroller.clientWidth;
+    let px = playhead * this.ppb - this.scroller.scrollLeft;
+    if (!takes && st.ui.playing && this.region && (px > W0 - 20 || px < 0)) { this.scroller.scrollLeft = Math.max(0, playhead * this.ppb - 40); px = playhead * this.ppb - this.scroller.scrollLeft; this.dirty = true; }
+    this.playLine ??= new PlayLine(this.canvas.parentElement!);
+    this.playLine.set(!takes && this.region && px >= 0 && px <= W0 ? px : null, st.ui.recording);
+    if (!this.dirty && !this.drag && !(takes && st.ui.playing)) return;
     this.dirty = false;
     this.syncSize();
     const { store } = this.cmd;
@@ -362,10 +369,6 @@ export class AudioEditor {
     g.fillStyle = t.color + '55'; g.fillRect(Math.max(0, rx0), 0, Math.max(0, Math.min(W, rx1) - Math.max(0, rx0)), 4);
     // selection
     if (this.sel) { const sx0 = X(this.sel[0]), sx1 = X(this.sel[1]); g.fillStyle = '#4c9aff33'; g.fillRect(sx0, RH, sx1 - sx0, H - RH); g.fillStyle = '#4c9aff'; g.fillRect(sx0, RH, 1, H - RH); g.fillRect(sx1, RH, 1, H - RH); }
-    // playhead
-    const px = X(playhead);
-    if (px >= 0 && px <= W) { g.fillStyle = store.ui.recording ? '#ff4d4f' : '#ffffff'; g.fillRect(Math.round(px), 0, 1, H); }
-    if (store.ui.playing && (px > W - 20 || px < 0)) this.scroller.scrollLeft = Math.max(0, playhead * ppb - 40);
   }
 
   private drawTakes(g: CanvasRenderingContext2D, W: number, H: number, playhead: number) {

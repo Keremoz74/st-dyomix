@@ -532,3 +532,11 @@ button.hdr-icon:hover { filter: brightness(1.3); }
 .pw-libstatus { padding: 7px 12px; font-size: 12px; color: #9fe0b0; background: #15251b; border-bottom: 1px solid var(--line); }
 .pw-libstatus.warn { color: #ffd98a; background: #2b2414; }
 .pw-lib { max-width: 220px; font-weight: 600; }
+
+/* playhead overlay (see ui/playline.ts) */
+.playline { position: absolute; top: 0; bottom: 0; left: 0; width: 1px; background: #fff; pointer-events: none; z-index: 3; will-change: transform; }
+.playline.rec { background: #ff4d4f; }
+.playline.tl { top: 30px; }
+.playline.tl::before { content: ''; position: absolute; top: 0; left: -6px; border: 6px solid transparent; border-bottom: 0; border-top: 9px solid currentColor; color: #fff; }
+.playline.tl.rec::before { color: #ff4d4f; }
+.tl-col { position: relative; overflow: hidden; }

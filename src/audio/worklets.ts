@@ -158,6 +158,33 @@ class Transient extends AudioWorkletProcessor {
   }
 }
 registerProcessor('daw-transient', Transient);
+// Sample-accurate recorder: captures the raw input (no encoder, no MediaRecorder timing guesswork)
+// and posts it in blocks of ~8192 frames together with the context time of the first frame.
+class Rec extends AudioWorkletProcessor {
+  constructor() {
+    super(); this.on = false; this.buf = null; this.n = 0; this.t0 = -1;
+    this.port.onmessage = e => {
+      if (e.data === 'start') { this.on = true; this.t0 = -1; }
+      else if (e.data === 'stop') { this.flush(); this.on = false; this.port.postMessage({ done: true }); }
+    };
+  }
+  flush() {
+    if (this.buf && this.n) { const out = this.buf.map(c => c.slice(0, this.n)); this.port.postMessage({ t0: this.t0, ch: out }, out.map(c => c.buffer)); }
+    this.buf = null; this.n = 0;
+  }
+  process(inputs) {
+    const inp = inputs[0];
+    if (!this.on || !inp || !inp.length) return true;
+    if (this.t0 < 0) this.t0 = currentTime;
+    if (!this.buf) this.buf = inp.map(() => new Float32Array(8192));
+    const len = inp[0].length;
+    for (let c = 0; c < this.buf.length; c++) this.buf[c].set(inp[Math.min(c, inp.length - 1)], this.n);
+    this.n += len;
+    if (this.n + len > 8192) this.flush();
+    return true;
+  }
+}
+registerProcessor('daw-recorder', Rec);
 `;
 
 const loaded = new WeakSet<BaseAudioContext>();

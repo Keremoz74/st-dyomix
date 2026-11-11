@@ -8,7 +8,7 @@ export interface AudioPrefs {
   bounceTail: number;        // extra seconds rendered after the song end (reverb/delay tails)
   normalize: boolean;        // bounce: normalize peak to -1 dBFS
 }
-export const AUDIO_DEFAULTS: AudioPrefs = { latency: 'interactive', sampleRate: 0, outputId: '', bounceRate: 44100, bounceBits: 16, bounceTail: 2, normalize: false };
+export const AUDIO_DEFAULTS: AudioPrefs = { latency: typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches ? 'balanced' : 'interactive', sampleRate: 0, outputId: '', bounceRate: 44100, bounceBits: 16, bounceTail: 2, normalize: false };
 
 export function audioPrefs(): AudioPrefs {
   try { return { ...AUDIO_DEFAULTS, ...JSON.parse(localStorage.getItem('daw.audio') || '{}') }; } catch { return { ...AUDIO_DEFAULTS }; }

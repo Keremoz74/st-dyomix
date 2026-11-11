@@ -1,4 +1,5 @@
 // Tracks area: local menu bar, track headers, ruler and the canvas timeline with region editing.
+import { PlayLine } from './playline';
 import { Region, TOOLS, ToolId, SnapMode, PEAK_BUCKET, uid, cloneRegion, isMidi, Note } from '../model';
 import { isDrumKit } from '../audio/instruments';
 import { Commands } from '../commands';
@@ -49,6 +50,7 @@ export class TracksArea {
   private snapBtn: HTMLButtonElement;
   private drag: Drag | null = null;
   private dirty = true;
+  private playLine!: PlayLine;
   private hoverCursor = '';
   private volInputs = new Map<string, HTMLInputElement>();
   private projName!: HTMLInputElement;
@@ -152,6 +154,7 @@ export class TracksArea {
     this.spacer = h('div', { class: 'spacer' });
     this.scroller = h('div', { class: 'lanes-scroll' }, this.spacer);
     const tlCol = h('div', { class: 'tl-col' }, this.ruler, h('div', { class: 'lanes-wrap' }, this.lanes, this.scroller));
+    this.playLine = new PlayLine(tlCol, 'tl');
 
     this.el = h('section', { class: 'tracks-area', 'aria-label': 'Tracks' }, toolbar, h('div', { class: 'tracks-main' }, hdrCol, tlCol));
 
@@ -858,13 +861,15 @@ export class TracksArea {
   markDirty() { this.dirty = true; }
 
   frame(playheadBeat: number, playing: boolean) {
-    if (!this.dirty && !playing && !this.drag) return;
-    this.dirty = false;
-    this.syncSize();
     if (playing && generalPrefs().followPlayhead) {
       const x = playheadBeat * this.ppb, w = this.scroller.clientWidth;
-      if (x > this.scroller.scrollLeft + w - 20 || x < this.scroller.scrollLeft) this.scroller.scrollLeft = Math.max(0, x - 40);
+      if (x > this.scroller.scrollLeft + w - 20 || x < this.scroller.scrollLeft) { this.scroller.scrollLeft = Math.max(0, x - 40); this.dirty = true; }
     }
+    const px = playheadBeat * this.ppb - this.scroller.scrollLeft;
+    this.playLine.set(px >= 0 && px <= this.scroller.clientWidth ? px : null, this.cmd.store.ui.recording);
+    if (!this.dirty && !this.drag) return;
+    this.dirty = false;
+    this.syncSize();
     this.drawRuler(playheadBeat);
     this.drawLanes(playheadBeat);
   }
@@ -937,10 +942,6 @@ export class TracksArea {
     if (movie) this.drawMovieLane(g, w, sx);
     g.fillStyle = '#0f1012'; g.fillRect(0, MARK_Y, w, 1); g.fillRect(0, TEMPO_Y, w, 1); g.fillRect(0, H - 1, w, 1);
     if (movie) g.fillRect(0, MOVIE_Y, w, 1);
-    const px = ph * ppb - sx;
-    g.fillStyle = store.ui.recording ? '#ff4d4f' : '#ffffff';
-    g.beginPath(); g.moveTo(px - 6, MARK_Y - 10); g.lineTo(px + 6, MARK_Y - 10); g.lineTo(px, MARK_Y - 1); g.closePath(); g.fill();
-    g.fillRect(Math.round(px), MARK_Y, 1, H - MARK_Y);
   }
 
   /** Movie lane: thumbnails laid out on the timeline from the movie's start to its end. */
@@ -1051,9 +1052,6 @@ export class TracksArea {
       const x0 = Math.min(d.bx, d.x) - sx, y0 = Math.min(d.by, d.y) - sy;
       g.fillRect(x0, y0, Math.abs(d.x - d.bx), Math.abs(d.y - d.by)); g.strokeRect(x0 + 0.5, y0 + 0.5, Math.abs(d.x - d.bx), Math.abs(d.y - d.by));
     }
-    // playhead
-    g.fillStyle = store.ui.recording ? '#ff4d4f' : '#ffffff';
-    g.fillRect(Math.round(ph * ppb - sx), 0, 1, H);
     if (!tracks.length) {
       g.fillStyle = '#9a9da5'; g.font = '13px Inter, system-ui, sans-serif'; g.textAlign = 'center';
       g.fillText('Drop audio files here, or add a track with +', w / 2, 60); g.textAlign = 'left';

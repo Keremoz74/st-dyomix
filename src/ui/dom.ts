@@ -30,6 +30,7 @@ const P: Record<string, string> = {
   mixer: 'M6 4v16M12 4v16M18 4v16M4 14h4M10 8h4M16 16h4',
   rewind: 'M11 6v12L3 12zM21 6v12l-8-6z',
   tostart: 'M5 6h2.5v12H5zM18.5 6v12L9 12z',
+  tuner: 'M9 3v7a3 3 0 0 0 6 0V3M12 13v8M9.5 21h5',
   forward: 'M3 6v12l8-6zM13 6v12l8-6z',
   stop: 'M6 6h12v12H6z',
   play: 'M7 5v14l12-7z',

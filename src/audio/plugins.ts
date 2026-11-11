@@ -3,8 +3,9 @@
 
 import { MORE_PLUGINS, MoreType } from './plugins2';
 import { THIRD_PLUGINS, ThirdType } from './plugins3';
+import { FOURTH_PLUGINS, FourthType } from './plugins4';
 
-export type PluginType = 'eq' | 'comp' | 'reverb' | 'delay' | 'chorus' | 'drive' | 'limiter' | 'tremolo' | 'autofilter' | MoreType | ThirdType | 'wam' | 'native';
+export type PluginType = 'eq' | 'comp' | 'reverb' | 'delay' | 'chorus' | 'drive' | 'limiter' | 'tremolo' | 'autofilter' | MoreType | ThirdType | FourthType | 'wam' | 'native';
 
 export interface ParamDef {
   id: string;
@@ -342,10 +343,10 @@ COMP.presets = {
   'Heavy Squash': { threshold: -35, ratio: 12, attack: 1, release: 60, knee: 0, makeup: 12 },
 };
 REVERB.presets = { 'Small Room': { decay: 0.7, predelay: 5, tone: 6000, mix: 18 }, 'Big Hall': { decay: 3.5, predelay: 30, tone: 8000, mix: 30 }, 'Dark Ambience': { decay: 5, predelay: 60, tone: 2500, mix: 35 } };
-for (const d of [...MORE_PLUGINS, ...THIRD_PLUGINS]) d.category = d.category ?? 'Utility';
+for (const d of [...MORE_PLUGINS, ...THIRD_PLUGINS, ...FOURTH_PLUGINS]) d.category = d.category ?? 'Utility';
 
-export const PLUGINS = Object.fromEntries([EQ, COMP, REVERB, DELAY, CHORUS, DRIVE, LIMITER, TREMOLO, AUTOFILTER, ...MORE_PLUGINS, ...THIRD_PLUGINS].map(d => [d.type, d])) as Record<PluginType, PluginDef>;
-export const PLUGIN_LIST: PluginDef[] = [EQ, GEQ(), COMP, LIMITER, ...MORE_PLUGINS.filter(d => d.type !== 'geq'), REVERB, DELAY, CHORUS, DRIVE, TREMOLO, AUTOFILTER, ...THIRD_PLUGINS];
+export const PLUGINS = Object.fromEntries([EQ, COMP, REVERB, DELAY, CHORUS, DRIVE, LIMITER, TREMOLO, AUTOFILTER, ...MORE_PLUGINS, ...THIRD_PLUGINS, ...FOURTH_PLUGINS].map(d => [d.type, d])) as Record<PluginType, PluginDef>;
+export const PLUGIN_LIST: PluginDef[] = [EQ, GEQ(), COMP, LIMITER, ...MORE_PLUGINS.filter(d => d.type !== 'geq'), REVERB, DELAY, CHORUS, DRIVE, TREMOLO, AUTOFILTER, ...THIRD_PLUGINS, ...FOURTH_PLUGINS];
 function GEQ() { return MORE_PLUGINS.find(d => d.type === 'geq')!; }
 /** Logic's plug-in menu order. */
 export const CATEGORIES = ['EQ', 'Dynamics', 'Reverb', 'Delay', 'Modulation', 'Distortion', 'Amps & Pedals', 'Filter', 'Pitch', 'Imaging', 'Metering', 'Utility'];

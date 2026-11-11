@@ -1,5 +1,9 @@
 // Tracks area: local menu bar, track headers, ruler and the canvas timeline with region editing.
 import { PlayLine } from './playline';
+import { groupOf } from '../groups';
+import { crossfadeOf } from '../crossfade';
+import { ROOTS, QUALITIES, chordName } from '../chords';
+import { ARR_COLORS, ARR_NAMES } from '../arranger';
 import { Region, TOOLS, ToolId, SnapMode, PEAK_BUCKET, uid, cloneRegion, isMidi, Note } from '../model';
 import { isDrumKit } from '../audio/instruments';
 import { Commands } from '../commands';
@@ -9,14 +13,16 @@ import { autoParams, findParam, sortPoints, valueAt } from '../automation';
 import { isFolder, expandRegion, compOf, trimFolderStart, folderMaxEnd } from '../takes';
 import { Take, CompSeg } from '../model';
 
-const RULER_H = 72;
+const RULER_H = 104;
 const CYCLE_H = 16;
-const BAR_Y = 16, MARK_Y = 40, TEMPO_Y = 56, LANE_H = 16, MOVIE_Y = 72, MOVIE_H = 34;
+const BAR_Y = 16, MARK_Y = 40, TEMPO_Y = 56, LANE_H = 16, ARR_Y = 72, CHORD_Y = 88, MOVIE_Y = 104, MOVIE_H = 34;
 const MARKER_COLORS = ['#5aa9e6', '#f08a5d', '#9b7bff', '#5fc77f', '#e8c547', '#e86ba8'];
 const HDR_W = 236;
 import { generalPrefs } from '../general-prefs';
 const EDGE = 8;
 /** Touch: how long to hold a region before it can be moved (ms). */
+const gainFrac = (g: number) => { g = Math.max(-24, Math.min(12, g)); return g >= 0 ? 0.35 - g / 12 * 0.3 : 0.35 + -g / 24 * 0.6; };
+const fracGain = (f: number) => f <= 0.35 ? Math.min(12, (0.35 - f) / 0.3 * 12) : Math.max(-24, -(f - 0.35) / 0.6 * 24);
 const HOLD_MS = 380;
 const mac = /Mac|iPhone|iPad/.test(navigator.platform);
 const K = (s: string) => (mac ? s : s.replace('⌘', 'Ctrl+').replace('⌥', 'Alt+').replace('⇧', 'Shift+'));
@@ -27,6 +33,9 @@ type Drag =
   | { kind: 'marquee'; bx: number; by: number; x: number; y: number; base: Set<string> }
   | { kind: 'fade'; r: Region; side: 'in' | 'out'; started: boolean }
   | { kind: 'auto'; t: Track; key: string; pt: AutoPoint; row: number; started: boolean }
+  | { kind: 'cgain'; r: Region; orig: Map<string, number>; y0: number; hh: number; started: boolean }
+  | { kind: 'arr'; id: string; x0: number; moved: boolean; to: number }
+  | { kind: 'chord'; id: string; x0: number; moved: boolean; b: number }
   | { kind: 'scrub' }
   | { kind: 'pan'; x: number; y: number; sl: number; st: number }
   | { kind: 'cycle'; b0: number; moved: boolean; wasOn: boolean }
@@ -51,6 +60,7 @@ export class TracksArea {
   private drag: Drag | null = null;
   private dirty = true;
   private playLine!: PlayLine;
+  private modeBtn!: HTMLButtonElement;
   private seenLocate = 0;
   private hoverCursor = '';
   private volInputs = new Map<string, HTMLInputElement>();
@@ -88,7 +98,10 @@ export class TracksArea {
       ['Nudge Left', K('⌥←'), () => cmd.nudgeRegions(-1)], ['Nudge Right', K('⌥→'), () => cmd.nudgeRegions(1)], '-',
       ['Split Regions at Playhead', K('⌘T'), cmd.splitAtPlayhead],
       ['Pack Take Folder', K('⌃⌘F'), cmd.packTakeFolder], ['Flatten Take Folder', '', () => cmd.flattenTakeFolder()], ['Join Regions', K('⌘J'), () => cmd.joinSelected()],
-      ['Repeat Regions Once', K('⌘R'), cmd.repeat], ['Mute Regions On/Off', K('⌃M'), cmd.toggleRegionMute],
+      ['Repeat Regions Once', K('⌘R'), cmd.repeat], ['Mute Regions On/Off', K('⌃M'), cmd.toggleRegionMute], '-',
+      { label: 'Edit Mode', sub: [['Shuffle', 'F1', () => cmd.setEditMode('shuffle'), store.ui.editMode === 'shuffle'], ['Slip', 'F2', () => cmd.setEditMode('slip'), store.ui.editMode === 'slip'], ['Grid', 'F4', () => cmd.setEditMode('grid'), (store.ui.editMode ?? 'grid') === 'grid']] },
+      { label: 'Clip Gain', sub: [['Clip Gain +1 dB', K('⇧⌘↑'), () => cmd.clipGain(1)], ['Clip Gain −1 dB', K('⇧⌘↓'), () => cmd.clipGain(-1)], ['Reset Clip Gain', '', () => cmd.clipGain(null)], { header: 'Or drag the yellow line on a selected region' }] },
+      ['Strip Silence…', K('⌘U'), () => cmd.openStripSilence()],
     ]);
     const fnMenu = menuBtn('Functions', () => [
       ...cmd.newTrackMenu().map(([l, k, f]) => [l, K(k), f] as MenuItem), ['Delete Track', K('⌘⌫'), cmd.deleteTrack], '-',
@@ -100,7 +113,14 @@ export class TracksArea {
         ['Transpose +12', K('⇧⌥↑'), () => cmd.transposeRegions(12)], ['Transpose −12', K('⇧⌥↓'), () => cmd.transposeRegions(-12)], '-',
         ['Quantize', 'Q', cmd.quantizeRegions],
       ] },
-      { label: 'Audio', sub: [['Reverse', '', () => cmd.processAudioRegions('reverse')], ['Normalize', '', () => cmd.processAudioRegions('normalize')]] },
+      { label: 'Audio', sub: [['Reverse', '', () => cmd.processAudioRegions('reverse')], ['Normalize', '', () => cmd.processAudioRegions('normalize')], ['Strip Silence…', K('⌘U'), () => cmd.openStripSilence()]] },
+      { label: 'Arranger Track', sub: [['Add Section at Playhead', K('⌥⌘R'), () => cmd.addArrSection()], { header: 'Tap a section for Duplicate / Delete / Length; drag it to move it with all its tracks' }] },
+      { label: 'Chord Track', sub: [
+        ['Add Chord at Playhead…', '', () => openMenu(fnMenu, this.chordPicker(store.snapBeat(store.ui.playhead)))],
+        ['Make MIDI Follow Chord Track', K('⌥⌘C'), cmd.followChordTrack],
+        ['Create Chord Region (Whole Notes)', '', () => cmd.createChordRegion('whole')], ['Create Chord Region (Quarter Notes)', '', () => cmd.createChordRegion('beats')],
+      ] },
+      ['Group Selected Tracks', K('⌘G'), cmd.groupSelectedTracks],
       ['New Track with Duplicate Settings', K('⌘D'), cmd.duplicateTrack],
       ['Bounce in Place', mac ? '⌃B' : K('⌥⌘B'), cmd.bounceInPlace], '-',
       ['Import Audio File…', K('⇧⌘I'), cmd.importAudio], ['Bounce Project to WAV…', K('⌘B'), cmd.bounce],
@@ -109,6 +129,7 @@ export class TracksArea {
       ['Inspector', 'I', cmd.toggleInspector, store.ui.showInspector], ['Mixer', 'X', cmd.toggleMixer, store.ui.showMixer],
       ['Piano Roll', 'P', cmd.toggleEditor, store.ui.showEditor], ['Track Automation', 'A', cmd.toggleAutomation, store.ui.showAuto], ['Musical Typing', K('⌘K'), cmd.toggleKeyboard, store.ui.showKeyboard], ['Movie Window', '', cmd.toggleMovieWindow, !!store.ui.showMovie && !!store.project.movie], '-',
       ['Plug-in Browser…', K('⇧⌘P'), () => cmd.openPluginBrowser('fx')], ['Key Commands…', K('⌥K'), () => cmd.openSettings('keys')], '-',
+      ['Memory Locations', K('⌘L'), () => cmd.openLocations()], ['Groups & VCA', '', () => cmd.openGroups()], ['Tuner', K('⌥⌘T'), () => cmd.openTuner()], ['Tap Tempo', '⇧T', cmd.tapTempo], '-',
       ['Zoom In', K('⌘→'), () => cmd.zoom(1.4)], ['Zoom Out', K('⌘←'), () => cmd.zoom(1 / 1.4)], '-',
       ['Taller Tracks', '', () => { store.ui.trackH = Math.min(140, store.ui.trackH + 12); store.emit('view'); }],
       ['Shorter Tracks', '', () => { store.ui.trackH = Math.max(40, store.ui.trackH - 12); store.emit('view'); }],
@@ -123,6 +144,8 @@ export class TracksArea {
     this.toolBtn = h('button', { class: 'tool-btn', title: 'Left-click Tool (T)', onClick: () => toolMenu(false)(this.toolBtn) });
     this.cmdToolBtn = h('button', { class: 'tool-btn', title: `${mac ? 'Command' : 'Ctrl'}-click Tool`, onClick: () => toolMenu(true)(this.cmdToolBtn) });
     const snaps: [SnapMode, string][] = [['smart', 'Smart'], ['bar', 'Bar'], ['beat', 'Beat'], ['div', '1/16'], ['off', 'Off']];
+    const modes: ['slip' | 'grid' | 'shuffle', string, string][] = [['shuffle', 'Shuffle', 'F1'], ['slip', 'Slip', 'F2'], ['grid', 'Grid', 'F4']];
+    this.modeBtn = h('button', { class: 'sel-btn', title: 'Edit mode (Pro Tools): Shuffle, Slip or Grid', onClick: () => openMenu(this.modeBtn, modes.map(([m, l, k]) => [l, k, () => cmd.setEditMode(m), (store.ui.editMode ?? 'grid') === m] as MenuItem)) });
     this.snapBtn = h('button', { class: 'sel-btn', onClick: () => openMenu(this.snapBtn, snaps.map(([m, l]) => [l, '', () => { store.ui.snap = m; store.emit('view'); }, store.ui.snap === m] as MenuItem)) });
 
     this.autoBtn = h('button', { class: 'tool-btn', title: 'Show/hide automation (A)', 'aria-pressed': 'false', onClick: cmd.toggleAutomation }, 'Automation');
@@ -130,6 +153,7 @@ export class TracksArea {
       this.projName, this.savedEl, fileMenu, editMenu, fnMenu, viewMenu,
       h('span', { class: 'grow' }),
       this.autoBtn,
+      this.modeBtn,
       h('span', { class: 'lm-label' }, 'Snap'), this.snapBtn,
       h('span', { class: 'lm-div' }),
       this.toolBtn, this.cmdToolBtn,
@@ -147,6 +171,8 @@ export class TracksArea {
         this.hdrCount),
        h('div', { class: 'hdr-lane-label' }, 'Marker', h('button', { class: 'hdr-lane-add', 'aria-label': 'Create marker at playhead', title: 'Create marker (⌥\')', onClick: () => { const m = cmd.addMarker(); if (m) this.editMarker(m.id); } }, '+')),
        h('div', { class: 'hdr-lane-label' }, 'Tempo', h('button', { class: 'hdr-lane-add', 'aria-label': 'Add tempo change at playhead', title: 'Add tempo change at playhead', onClick: () => { const e = cmd.addTempoEvent(Math.max(1, Math.round(store.ui.playhead))); if (e) this.editTempo(e.id); } }, '+')),
+       h('div', { class: 'hdr-lane-label' }, 'Arranger', h('button', { class: 'hdr-lane-add', 'aria-label': 'Add arranger section at playhead', title: 'Add an arranger section (Verse, Chorus…) at the playhead', onClick: () => cmd.addArrSection() }, '+')),
+       h('div', { class: 'hdr-lane-label' }, 'Chords', (() => { const b: HTMLButtonElement = h('button', { class: 'hdr-lane-add', 'aria-label': 'Add chord at playhead', title: 'Add a chord at the playhead', 'aria-haspopup': 'menu', onClick: () => openMenu(b, this.chordPicker(store.snapBeat(store.ui.playhead))) }, '+'); return b; })()),
        this.movieLabel = h('div', { class: 'hdr-lane-label hdr-movie', hidden: true }, 'Movie', (() => { const b: HTMLButtonElement = h('button', { class: 'hdr-lane-add', 'aria-label': 'Movie options', title: 'Movie options', 'aria-haspopup': 'menu', onClick: () => openMenu(b, this.movieMenu()) }, '⋯'); return b; })())),
       this.hdrList);
 
@@ -205,10 +231,11 @@ export class TracksArea {
         const sel = store.ui.selectedTrackIds.has(t.id) || t.id === store.ui.selectedTrackId;
         const b = (label: string, key: 'mute' | 'solo' | 'armed' | 'monitor', aria: string) =>
           h('button', { class: `tb tb-${key}${t[key] ? ' on' : ''}`, 'aria-label': `${aria} ${t.name}`, 'aria-pressed': String(t[key]), title: aria, onPointerdown: (e: PointerEvent) => e.stopPropagation(), onClick: (e: MouseEvent) => { e.stopPropagation(); this.cmd.toggleTrack(key, t.id); } }, label);
-        const name = h('button', { class: 'hdr-name', title: 'Double-click to rename' }, t.name);
+        const grp = groupOf(store, t);
+        const name = h('button', { class: 'hdr-name', title: 'Double-click to rename' }, t.name, grp ? h('span', { class: 'hdr-group', style: { background: grp.color + '33', color: grp.color }, title: `${grp.name} (VCA ${grp.vca >= 0 ? '+' : ''}${grp.vca.toFixed(1)} dB)` }, grp.name) : null);
         name.addEventListener('dblclick', e => { e.stopPropagation(); this.rename(name, t.id); });
         const vol = h('input', { type: 'range', min: '-60', max: '6', step: '0.5', value: String(t.volume), 'aria-label': `${t.name} volume`, title: 'Volume', class: 'hdr-vol' }) as HTMLInputElement;
-        vol.addEventListener('input', () => { t.volume = parseFloat(vol.value); store.emit('mix'); });
+        vol.addEventListener('input', () => this.cmd.setTrackVolume(t, parseFloat(vol.value)));
         vol.addEventListener('pointerdown', e => e.stopPropagation());
         this.volInputs.set(t.id, vol);
         const dim = t.mute || (all.some(x => x.solo) && !t.solo && !(t.parent && store.track(t.parent)?.solo) && !(t.kind === 'folder' && all.some(x => x.parent === t.id && x.solo)));
@@ -248,6 +275,10 @@ export class TracksArea {
       ...(t.kind !== 'folder' ? [[nSel > 1 ? `Create Track Stack (${nSel} tracks)` : 'Create Track Stack', '⇧⌘D', this.cmd.createStack] as MenuItem] : []),
       ...(t.kind !== 'folder' ? folders.map(f => [`Move to “${f.name}”`, '', () => this.cmd.moveToStack(id, f.id)] as MenuItem) : []),
       ...(t.parent ? [['Remove from Stack', '', () => this.cmd.moveToStack(id, null)] as MenuItem] : []),
+      '-',
+      ...(t.kind !== 'aux' && t.kind !== 'folder' ? [[nSel > 1 ? `Group Tracks (${nSel})` : 'Group Tracks…', K('⌘G'), this.cmd.groupSelectedTracks] as MenuItem] : []),
+      ...(t.group ? [['Remove from Group', '', () => this.cmd.removeFromGroup(id)] as MenuItem] : []),
+      ['Groups & VCA…', '', () => this.cmd.openGroups()],
       '-',
       [t.kind === 'folder' ? 'Delete Stack (keeps its tracks)' : 'Delete Track', '⌘⌫', () => { store.ui.selectedTrackId = id; this.cmd.deleteTrack(); }],
     ]);
@@ -289,6 +320,9 @@ export class TracksArea {
     const { ui } = this.cmd.store;
     this.autoBtn.classList.toggle('on', ui.showAuto); this.autoBtn.setAttribute('aria-pressed', String(ui.showAuto));
     if (document.activeElement !== this.projName) this.projName.value = this.cmd.store.project.name;
+    const em = ui.editMode ?? 'grid';
+    this.modeBtn.replaceChildren(h('span', {}, em === 'slip' ? 'Slip' : em === 'shuffle' ? 'Shuffle' : 'Grid'), icon('chevron', 10));
+    this.modeBtn.classList.toggle('on', em === 'shuffle');
     const lab = (id: ToolId) => TOOLS.find(t => t.id === id)!.label;
     this.toolBtn.replaceChildren(icon(ui.tool, 16), h('span', {}, lab(ui.tool)), icon('chevron', 10));
     this.toolBtn.setAttribute('aria-label', `Left-click tool: ${lab(ui.tool)}`);
@@ -415,6 +449,12 @@ export class TracksArea {
       if (shift) { ui.selectedRegionIds.has(r.id) ? ui.selectedRegionIds.delete(r.id) : ui.selectedRegionIds.add(r.id); }
       else if (!ui.selectedRegionIds.has(r.id)) ui.selectedRegionIds = new Set([r.id]);
       store.emit('structure');
+      if (this.clipGainHit(r, x, y)) {
+        const rh = store.ui.trackH - 4, hh = rh - (rh >= 34 ? 15 : 0);
+        const regs = store.selectedRegions().filter(x => !isMidi(x));
+        this.drag = { kind: 'cgain', r, orig: new Map(regs.map(x => [x.id, x.gain ?? 0])), y0: y, hh, started: false };
+        return;
+      }
       const edge = this.edgeZone(r, x);
       if (edge && !isMidi(r) && this.upperHalf(y)) { this.drag = { kind: 'fade', r, side: edge === 'L' ? 'in' : 'out', started: false }; return; }
       if (edge === 'L' && r.flex?.on && !isMidi(r)) { toast('Turn Flex off to trim the start of this region'); return; }
@@ -482,6 +522,13 @@ export class TracksArea {
       d.lastDr = dr;
       for (const [id, o] of d.orig) { const r = store.region(id); if (r) { r.start = o.start + db; r.trackId = vis[o.track + dr].id; } }
       this.dirty = true;
+    } else if (d.kind === 'cgain') {
+      if (!d.started) { if (Math.abs(e.clientY - d.y0) < 2) return; store.checkpoint(); d.started = true; }
+      const g0 = d.orig.get(d.r.id) ?? 0;
+      const target = fracGain(gainFrac(g0) + (e.clientY - d.y0) / d.hh);
+      const delta = Math.round((target - g0) * 10) / 10;
+      for (const [id, o] of d.orig) { const x = store.region(id); if (x) x.gain = Math.max(-36, Math.min(12, Math.round((o + delta) * 10) / 10)) || undefined; }
+      this.dirty = true;
     } else if (d.kind === 'fade') {
       if (!d.started) { store.checkpoint(); d.started = true; }
       const r = d.r, b = this.contentX(e.clientX) / this.ppb;
@@ -541,8 +588,12 @@ export class TracksArea {
     }
     if (!d) return;
     const { store } = this.cmd;
+    if (d.kind === 'resizeR' && d.started && store.ui.editMode === 'shuffle') {
+      const delta = d.r.length - d.origLen, from = d.origStart + d.origLen;
+      if (Math.abs(delta) > 1e-6) for (const x of store.project.regions) if (x !== d.r && x.trackId === d.r.trackId && x.start >= from - 1e-6) x.start = Math.max(0, x.start + delta);
+    }
     if ((d.kind === 'resizeR' || d.kind === 'resizeL') && d.started) { const r = d.r; r.fadeIn = Math.min(r.fadeIn ?? 0, r.length); r.fadeOut = Math.min(r.fadeOut ?? 0, r.length - (r.fadeIn ?? 0)); }
-    if ((d.kind === 'move' || d.kind === 'resizeR' || d.kind === 'resizeL' || d.kind === 'fade') && d.started) { store.emit('structure'); this.cmd.engine.resync(); }
+    if ((d.kind === 'move' || d.kind === 'resizeR' || d.kind === 'resizeL' || d.kind === 'fade' || d.kind === 'cgain') && d.started) { store.emit('structure'); this.cmd.engine.resync(); }
     if (d.kind === 'marquee') store.emit('structure');
     if (d.kind === 'auto') { store.emit('structure'); this.cmd.autoEdited(); }
     this.dirty = true;
@@ -752,6 +803,17 @@ export class TracksArea {
       if (m) this.drag = { kind: 'movie', orig: m.start, b0: store.beatAtSec(m.start), x0: e.clientX, moved: false };
       return;
     }
+    if (y >= CHORD_Y) {
+      const c = this.chordAtX(e.clientX);
+      if (c) this.drag = { kind: 'chord', id: c.id, x0: e.clientX, moved: false, b: c.b };
+      else openMenu(this.rulerAnchor(e.clientX, e.clientY), this.chordPicker(store.snapBeat(b)));
+      return;
+    }
+    if (y >= ARR_Y) {
+      const s = this.arrAt(b);
+      if (s) this.drag = { kind: 'arr', id: s.id, x0: e.clientX, moved: false, to: s.b };
+      return;
+    }
     if (y >= TEMPO_Y) {
       const ev = this.tempoAt(e.clientX);
       if (ev) this.drag = { kind: 'tempo', id: ev.id, orig: ev.b, x0: e.clientX, moved: false };
@@ -777,6 +839,20 @@ export class TracksArea {
       const nb = Math.max(0, store.snapBeat(d.b0 + (e.clientX - d.x0) / this.ppb));
       m.start = Math.round(store.secAt(nb) * 1000) / 1000;
       this.dirty = true;
+    } else if (d.kind === 'arr') {
+      if (!d.moved && Math.abs(e.clientX - d.x0) < 6) return;
+      d.moved = true;
+      // drop point: the nearest section boundary (or bar) under the finger
+      const bpb = store.beatsPerBar, at = this.beatAt(e.clientX);
+      const bounds = (store.project.arranger ?? []).flatMap(x => [x.b, x.b + x.len]);
+      const near = bounds.find(x => Math.abs(x - at) * this.ppb < 24);
+      d.to = near ?? Math.max(0, Math.round(at / bpb) * bpb);
+      this.dirty = true;
+    } else if (d.kind === 'chord') {
+      if (!d.moved && Math.abs(e.clientX - d.x0) < 4) return;
+      d.moved = true;
+      const c = (store.project.chords ?? []).find(x => x.id === d.id); if (c) c.b = Math.max(0, b);
+      this.dirty = true;
     } else if (d.kind === 'marker' || d.kind === 'tempo') {
       if (!d.moved && Math.abs(e.clientX - d.x0) < 4) return;
       if (d.kind === 'tempo' && d.id === 'base') return;
@@ -795,6 +871,15 @@ export class TracksArea {
     if (d.kind === 'scrub' && this.cmd.engine.playing) this.cmd.locate(store.ui.playhead);
     if (d.kind === 'cycle') { if (!d.moved) this.cmd.toggleCycle(); else this.cmd.engine.resync(); }
     if (d.kind === 'movie') { if (d.moved) store.emit('structure'); else { store.ui.showMovie = true; store.emit('view'); } }
+    if (d.kind === 'arr') {
+      if (d.moved) this.cmd.arrMove(d.id, d.to);
+      else openMenu(this.rulerAnchor(_e.clientX, _e.clientY), this.arrMenu(d.id));
+    }
+    if (d.kind === 'chord') {
+      const c = (store.project.chords ?? []).find(x => x.id === d.id);
+      if (d.moved && c) { const nb = c.b; c.b = d.b; this.cmd.moveChord(d.id, nb); }
+      else if (c) { this.cmd.auditionChord(c.root, c.q); openMenu(this.rulerAnchor(_e.clientX, _e.clientY), this.chordPicker(c.b, c.id)); }
+    }
     if (d.kind === 'marker') {
       const m = store.project.markers.find(x => x.id === d.id);
       if (!d.moved && m) this.cmd.locate(m.b);
@@ -815,6 +900,7 @@ export class TracksArea {
       const m = this.markerAt(b);
       if (m && Math.abs(m.b - b) < 8 * store.beatsPerBar) { this.editMarker(m.id); return; }
     }
+    if (y >= ARR_Y && y < CHORD_Y) { if (!this.arrAt(b)) this.cmd.addArrSection(b); return; }
     if (y >= MARK_Y && y < TEMPO_Y) { const m = this.cmd.addMarker(b); if (m) this.editMarker(m.id); }
     else if (y >= TEMPO_Y && y < TEMPO_Y + LANE_H && !this.tempoAt(e.clientX)) { const ev = this.cmd.addTempoEvent(store.snapBeat(b)); if (ev) this.editTempo(ev.id); }
   }
@@ -831,6 +917,14 @@ export class TracksArea {
     } else if (y >= MOVIE_Y) {
       e.preventDefault();
       openMenu(anchor, this.movieMenu());
+    } else if (y >= CHORD_Y) {
+      e.preventDefault();
+      const c = this.chordAtX(e.clientX);
+      openMenu(anchor, this.chordPicker(c?.b ?? store.snapBeat(b), c?.id));
+    } else if (y >= ARR_Y) {
+      e.preventDefault();
+      const sct = this.arrAt(b);
+      openMenu(anchor, sct ? this.arrMenu(sct.id) : [['Add Section Here', '', () => this.cmd.addArrSection(b)]]);
     } else if (y >= TEMPO_Y) {
       e.preventDefault();
       const ev = this.tempoAt(e.clientX);
@@ -942,10 +1036,80 @@ export class TracksArea {
       g.fillStyle = i ? '#ff9f43' : '#9a9da5'; g.fillRect(x, TEMPO_Y + 2, 1.5, LANE_H - 4);
       g.fillStyle = i ? '#ffc285' : '#c4c6cc'; g.fillText(`♩${ev.bpm}`, Math.max(x, 0) + 4, TEMPO_Y + LANE_H / 2 + 0.5);
     });
+    this.drawArranger(g, w, sx);
+    this.drawChords(g, w, sx);
     if (movie) this.drawMovieLane(g, w, sx);
-    g.fillStyle = '#0f1012'; g.fillRect(0, MARK_Y, w, 1); g.fillRect(0, TEMPO_Y, w, 1); g.fillRect(0, H - 1, w, 1);
+    g.fillStyle = '#0f1012'; g.fillRect(0, MARK_Y, w, 1); g.fillRect(0, TEMPO_Y, w, 1); g.fillRect(0, ARR_Y, w, 1); g.fillRect(0, CHORD_Y, w, 1); g.fillRect(0, H - 1, w, 1);
     if (movie) g.fillRect(0, MOVIE_Y, w, 1);
   }
+
+  private drawArranger(g: CanvasRenderingContext2D, w: number, sx: number) {
+    const { store } = this.cmd, ppb = this.ppb;
+    g.fillStyle = '#1b1c20'; g.fillRect(0, ARR_Y, w, LANE_H);
+    g.font = '600 10px Inter, system-ui, sans-serif'; g.textBaseline = 'middle';
+    const d = this.drag;
+    for (const s of store.project.arranger ?? []) {
+      const x0 = s.b * ppb - sx, x1 = (s.b + s.len) * ppb - sx;
+      if (x1 < 0 || x0 > w) continue;
+      const dragging = d?.kind === 'arr' && d.id === s.id && d.moved;
+      g.globalAlpha = dragging ? 0.4 : 1;
+      g.fillStyle = s.color + 'cc'; g.fillRect(x0 + 1, ARR_Y + 1, Math.max(2, x1 - x0 - 2), LANE_H - 2);
+      g.save(); g.beginPath(); g.rect(x0, ARR_Y, Math.max(0, x1 - x0 - 2), LANE_H); g.clip();
+      g.fillStyle = '#111214'; g.fillText(s.name, Math.max(x0, 0) + 5, ARR_Y + LANE_H / 2 + 0.5); g.restore();
+      g.globalAlpha = 1;
+    }
+    if (d?.kind === 'arr' && d.moved) { const x = d.to * ppb - sx; g.fillStyle = '#ffd166'; g.fillRect(x - 1, ARR_Y, 3, LANE_H); }
+  }
+  private drawChords(g: CanvasRenderingContext2D, w: number, sx: number) {
+    const { store } = this.cmd, ppb = this.ppb;
+    g.fillStyle = '#1f2024'; g.fillRect(0, CHORD_Y, w, LANE_H);
+    g.font = '600 10px Inter, system-ui, sans-serif'; g.textBaseline = 'middle';
+    const list = [...(store.project.chords ?? [])].sort((a, b) => a.b - b.b);
+    list.forEach((c, i) => {
+      const x = c.b * ppb - sx, nx = (list[i + 1]?.b ?? Infinity) * ppb - sx;
+      if (nx < 0 || x > w) return;
+      g.fillStyle = '#35c46b'; g.fillRect(x, CHORD_Y + 2, 1.5, LANE_H - 4);
+      g.save(); g.beginPath(); g.rect(x, CHORD_Y, Math.max(0, Math.min(nx, w + 400) - x - 2), LANE_H); g.clip();
+      g.fillStyle = '#9be7b4'; g.fillText(chordName(c), Math.max(x, 0) + 4, CHORD_Y + LANE_H / 2 + 0.5); g.restore();
+    });
+  }
+  private arrAt(b: number) { return (this.cmd.store.project.arranger ?? []).find(s => b >= s.b && b < s.b + s.len); }
+  private chordAtX(clientX: number) {
+    const x = this.beatAt(clientX) * this.ppb;
+    const list = [...(this.cmd.store.project.chords ?? [])].sort((a, b) => b.b - a.b);
+    return list.find(c => x >= c.b * this.ppb - 3 && x < c.b * this.ppb + 40) ?? null;
+  }
+  chordPicker(b: number, existing?: string): MenuItem[] {
+    const c = this.cmd;
+    return [
+      { header: 'Chord' },
+      ...ROOTS.map((r, ri) => ({ label: r, sub: QUALITIES.map(([q, name]) => [`${r}${q}`, name, () => { if (existing) c.deleteChord(existing); c.setChord(b, ri, q); }] as MenuItem) })),
+      ...(existing ? ['-', ['Delete Chord', '', () => c.deleteChord(existing)]] as MenuItem[] : []),
+    ];
+  }
+  arrMenu(id: string): MenuItem[] {
+    const c = this.cmd, s = (c.store.project.arranger ?? []).find(x => x.id === id); if (!s) return [];
+    const bpb = c.store.beatsPerBar;
+    return [
+      { header: `${s.name} · ${s.len / bpb} bars` },
+      ['Play This Section (Cycle)', '', () => c.arrCycle(id)],
+      ['Rename…', '', () => this.editArr(id)],
+      { label: 'Name', sub: ARR_NAMES.map(n => [n, '', () => c.arrRename(id, n), s.name === n] as MenuItem) },
+      { label: 'Length', sub: [1, 2, 4, 8, 12, 16, 24, 32].map(n => [`${n} bars`, '', () => c.arrLength(id, n), s.len === n * bpb] as MenuItem) },
+      { label: 'Color', sub: ARR_COLORS.map((col, i) => [`● ${['Blue', 'Pink', 'Yellow', 'Teal', 'Violet', 'Orange', 'Green', 'Sky'][i]}`, '', () => c.arrColor(id, col), s.color === col] as MenuItem) },
+      '-',
+      ['Duplicate Section (with all tracks)', '', () => c.arrDuplicate(id)],
+      ['Delete Section (with all tracks)', '', () => c.arrDelete(id)],
+      ['Remove Section Only', '', () => c.arrRemoveOnly(id)],
+      { header: 'Drag a section to move it with everything in it' },
+    ];
+  }
+  editArr(id: string) {
+    const s = (this.cmd.store.project.arranger ?? []).find(x => x.id === id); if (!s) return;
+    const r = this.ruler.getBoundingClientRect();
+    inlineEdit(r.left + s.b * this.ppb - this.scroller.scrollLeft, r.top + ARR_Y - 4, s.name, v => this.cmd.arrRename(id, v));
+  }
+  private rulerAnchor(clientX: number, clientY: number) { const a = h('div', { style: { position: 'fixed', left: `${clientX}px`, top: `${clientY}px` } }); document.body.appendChild(a); setTimeout(() => a.remove(), 0); return a; }
 
   /** Movie lane: thumbnails laid out on the timeline from the movie's start to its end. */
   private drawMovieLane(g: CanvasRenderingContext2D, w: number, sx: number) {
@@ -1041,6 +1205,24 @@ export class TracksArea {
         g.fillStyle = '#00000080'; g.strokeStyle = '#ffffffcc'; g.lineWidth = 1.2;
         if (fi > 1) { g.beginPath(); g.moveTo(x, y + rh); g.lineTo(x + fi, y + headH); g.lineTo(x, y + headH); g.closePath(); g.fill(); g.beginPath(); g.moveTo(x, y + rh); g.lineTo(x + fi, y + headH); g.stroke(); }
         if (fo > 1) { const xe = x + rw; g.beginPath(); g.moveTo(xe, y + rh); g.lineTo(xe - fo, y + headH); g.lineTo(xe, y + headH); g.closePath(); g.fill(); g.beginPath(); g.moveTo(xe, y + rh); g.lineTo(xe - fo, y + headH); g.stroke(); }
+        // automatic crossfade where the next region on this track overlaps
+        const xf = crossfadeOf(store, r);
+        if (xf.out > 0) {
+          const xe = x + rw, xs = xe - xf.out * ppb;
+          g.strokeStyle = '#ffd166'; g.lineWidth = 1.5; g.beginPath();
+          g.moveTo(xs, y + headH); g.lineTo(xe, y + rh); g.moveTo(xs, y + rh); g.lineTo(xe, y + headH); g.stroke();
+        }
+        // Clip Gain line (Pro Tools): drag the handle up/down
+        if (sel && rh - headH > 18) {
+          const gy = this.clipGainY(r, y + headH, rh - headH);
+          g.strokeStyle = '#ffd166'; g.lineWidth = 1; g.setLineDash([4, 3]); g.beginPath(); g.moveTo(x, gy); g.lineTo(x + rw, gy); g.stroke(); g.setLineDash([]);
+          const hx = this.clipGainHandleX(x, rw, w);
+          g.fillStyle = '#ffd166'; g.beginPath(); g.arc(hx, gy, 5, 0, Math.PI * 2); g.fill();
+          g.fillStyle = '#111214'; g.font = '600 10px Inter, system-ui, sans-serif'; g.textBaseline = 'middle';
+          const label = `${(r.gain ?? 0) >= 0 ? '+' : ''}${(r.gain ?? 0).toFixed(1)} dB`;
+          const lw = g.measureText(label).width + 8;
+          g.fillStyle = '#ffd166'; g.fillRect(hx + 8, gy - 7, lw, 14); g.fillStyle = '#111214'; g.fillText(label, hx + 12, gy + 0.5);
+        }
       }
       g.restore();
       const lifted = this.lifted === r.id || (!!this.lifted && sel);
@@ -1078,12 +1260,28 @@ export class TracksArea {
     }
   }
 
+  /** Clip gain line height: +12 dB near the top, 0 dB at 35 %, −24 dB near the bottom. */
+  private clipGainY(r: Region, top: number, hh: number) { return top + hh * gainFrac(r.gain ?? 0); }
+  private clipGainHandleX(x: number, rw: number, viewW: number) { const a = Math.max(x, 0), b = Math.min(x + rw, viewW); return Math.max(a + 10, Math.min(b - 70, (a + b) / 2)); }
+  private clipGainHit(r: Region, clientX: number, clientY: number): boolean {
+    const { store } = this.cmd;
+    if (isMidi(r) || !store.ui.selectedRegionIds.has(r.id)) return false;
+    const rect = this.scroller.getBoundingClientRect();
+    const TH = store.ui.trackH, i = store.visibleTracks().findIndex(t => t.id === r.trackId); if (i < 0) return false;
+    const rh = TH - 4, headH = rh >= 34 ? 15 : 0, y = i * TH - this.scroller.scrollTop + 2;
+    if (rh - headH <= 18) return false;
+    const x = r.start * this.ppb - this.scroller.scrollLeft, w = this.scroller.clientWidth;
+    const hx = this.clipGainHandleX(x, r.length * this.ppb, w), gy = this.clipGainY(r, y + headH, rh - headH);
+    const px = clientX - rect.left, py = clientY - rect.top, tol = 12;
+    return Math.abs(py - gy) < tol && Math.abs(px - hx) < 60;
+  }
+
   private drawWave(g: CanvasRenderingContext2D, r: Region, x: number, y: number, rw: number, rh: number, col: string, _sx: number, viewW: number) {
     const { store } = this.cmd;
     const peaks = store.peaks.get(r.bufferId), buf = store.buffers.get(r.bufferId);
     if (!peaks || !buf || rh < 6) return;
     const ppb = this.ppb, sr = buf.sampleRate;
-    const mid = y + rh / 2, amp = rh / 2 - 1;
+    const mid = y + rh / 2, amp = (rh / 2 - 1) * Math.pow(10, (r.gain ?? 0) / 20);
     const px0 = Math.max(0, Math.floor(-x)), px1 = Math.min(rw, viewW - x);
     g.fillStyle = col;
     g.beginPath();

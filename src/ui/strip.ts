@@ -19,7 +19,7 @@ export function channelStrip(cmd: Commands, track: Track | null, opts: { selecte
   const isMaster = !track;
   const color = track?.color ?? '#9aa0aa';
   const getDb = () => (track ? track.volume : store.project.masterVolume);
-  const setDb = (db: number) => { if (track) { track.volume = db; cmd.gesture(track.id, 'volume', 'value', db); } else store.project.masterVolume = db; };
+  const setDb = (db: number) => { if (track) { cmd.setTrackVolume(track, db); cmd.gesture(track.id, 'volume', 'value', db); } else store.project.masterVolume = db; };
 
   const dbLabel = h('span', { class: 'st-val' }, fmtDb(getDb()));
   const peakLabel = h('span', { class: 'st-val' }, '-∞');

@@ -185,6 +185,93 @@ class Rec extends AudioWorkletProcessor {
   }
 }
 registerProcessor('daw-recorder', Rec);
+// Pitch Correct: YIN pitch detection (on a 2x decimated mono copy) + nearest scale note + a smooth
+// two-tap delay-line pitch shifter, like the classic automatic vocal tuners.
+const SCALE_STEPS = [[0,1,2,3,4,5,6,7,8,9,10,11], [0,2,4,5,7,9,11], [0,2,3,5,7,8,10]];
+class PitchCorrect extends AudioWorkletProcessor {
+  static get parameterDescriptors() { return [
+    { name: 'key', defaultValue: 0, automationRate: 'k-rate' },
+    { name: 'scale', defaultValue: 0, automationRate: 'k-rate' },
+    { name: 'speed', defaultValue: 0.7, automationRate: 'k-rate' },
+    { name: 'tolerance', defaultValue: 5, automationRate: 'k-rate' },
+    { name: 'shift', defaultValue: 0, automationRate: 'k-rate' },
+    { name: 'mix', defaultValue: 1, automationRate: 'k-rate' },
+  ]; }
+  constructor() {
+    super();
+    this.size = 1 << 14; this.buf = [new Float32Array(this.size), new Float32Array(this.size)]; this.w = 0; this.ph = 0;
+    this.A = new Float32Array(1024); this.aw = 0; this.half = 0; this.cnt = 0;
+    this.ratio = 1; this.target = 1; this.d = new Float32Array(400);
+  }
+  detect() {
+    // last 700 decimated samples (~ 32 ms at 44.1 kHz)
+    const A = this.A, N = 1024, W = 360, TMAX = 330, TMIN = Math.max(10, Math.floor(sampleRate / 2 / 1000));
+    const sr2 = sampleRate / 2, d = this.d, start = (this.aw - W - TMAX + N) % N;
+    let energy = 0;
+    for (let j = 0; j < W; j++) { const v = A[(start + j) % N]; energy += v * v; }
+    if (energy / W < 1e-5) return 0;
+    let run = 0; d[0] = 1;
+    for (let t = 1; t <= TMAX; t++) {
+      let s = 0;
+      for (let j = 0; j < W; j++) { const x = A[(start + j) % N] - A[(start + j + t) % N]; s += x * x; }
+      run += s; d[t] = run > 0 ? s * t / run : 1;
+    }
+    for (let t = TMIN; t < TMAX; t++) {
+      if (d[t] < 0.15) {
+        while (t + 1 < TMAX && d[t + 1] < d[t]) t++;
+        const a = d[t - 1], b = d[t], c = d[t + 1], den = a + c - 2 * b;
+        const tt = den ? t + (a - c) / (2 * den) : t;
+        return sr2 / tt;
+      }
+    }
+    return 0;
+  }
+  process(inputs, outputs, p) {
+    const inp = inputs[0], out = outputs[0];
+    if (!inp || !inp.length) return true;
+    const n = inp[0].length, mix = p.mix[0], M = this.size - 1;
+    const key = Math.round(p.key[0]), steps = SCALE_STEPS[Math.round(p.scale[0])] || SCALE_STEPS[0];
+    const hopDur = 256 / sampleRate, tc = 0.002 + (1 - p.speed[0]) * 0.25, alpha = 1 - Math.exp(-hopDur / tc);
+    for (let i = 0; i < n; i++) {
+      const L = inp[0][i], R = (inp[1] || inp[0])[i];
+      this.buf[0][this.w] = L; this.buf[1][this.w] = R;
+      // analysis: decimate by 2
+      this.half += (L + R) * 0.25;
+      if ((this.w & 1) === 1) { this.A[this.aw] = this.half; this.aw = (this.aw + 1) & 1023; this.half = 0; }
+      if (++this.cnt >= 256) {
+        this.cnt = 0;
+        const f = this.detect();
+        let tgt = 1;
+        if (f > 60 && f < 1100) {
+          const m = 69 + 12 * Math.log2(f / 440);
+          let best = m, bd = 99;
+          for (let o = -1; o <= 1; o++) for (const st of steps) {
+            const c = Math.round((m - key - st) / 12) * 12 + key + st + o * 12, dd = Math.abs(c - m);
+            if (dd < bd) { bd = dd; best = c; }
+          }
+          const corr = bd * 100 <= p.tolerance[0] ? 0 : best - m;
+          tgt = Math.pow(2, (corr + p.shift[0]) / 12);
+        } else tgt = Math.pow(2, p.shift[0] / 12);
+        this.target = tgt;
+      }
+      this.ratio += (this.target - this.ratio) * (alpha / 256);
+      const win = Math.round(0.03 * sampleRate), step = (1 - this.ratio) / win;
+      this.ph += step; if (this.ph >= 1) this.ph -= 1; if (this.ph < 0) this.ph += 1;
+      const ph2 = (this.ph + 0.5) % 1, d1 = this.ph * win + 2, d2 = ph2 * win + 2;
+      const g1 = Math.sin(Math.PI * this.ph), g2 = Math.sin(Math.PI * ph2);
+      for (let c = 0; c < out.length; c++) {
+        const b = this.buf[c] || this.buf[0], dry = c ? R : L;
+        const r1 = this.w - d1, r2 = this.w - d2, i1 = Math.floor(r1), f1 = r1 - i1, i2 = Math.floor(r2), f2 = r2 - i2;
+        const a1 = b[i1 & M] + (b[(i1 + 1) & M] - b[i1 & M]) * f1, a2 = b[i2 & M] + (b[(i2 + 1) & M] - b[i2 & M]) * f2;
+        const wet = a1 * g1 * g1 + a2 * g2 * g2;
+        out[c][i] = dry + (wet - dry) * mix;
+      }
+      this.w = (this.w + 1) & M;
+    }
+    return true;
+  }
+}
+registerProcessor('daw-pitchcorrect', PitchCorrect);
 `;
 
 const loaded = new WeakSet<BaseAudioContext>();
@@ -200,7 +287,7 @@ export function ensureWorklets(ctx: BaseAudioContext): Promise<void> {
     if (!url) url = URL.createObjectURL(new Blob([CODE], { type: 'text/javascript' }));
     const add = (u: string) => ctx.audioWorklet ? ctx.audioWorklet.addModule(u) : Promise.reject(new Error('no AudioWorklet'));
     // blob: URLs don't load on file:// pages (opaque origin); a data: URL does
-    p = add(url).catch(() => add('data:text/javascript;base64,' + btoa(CODE)))
+    p = add(url).catch(() => add('data:text/javascript;base64,' + btoa(unescape(encodeURIComponent(CODE)))))
       .then(() => { loaded.add(ctx); })
       .catch(e => { console.warn('worklets unavailable', e); });
     loading.set(ctx, p);

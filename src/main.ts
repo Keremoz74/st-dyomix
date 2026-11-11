@@ -25,6 +25,7 @@ import { applyGeneralPrefs } from './general-prefs';
 import { Freezer } from './audio/freeze';
 import { onBankState, GM } from './audio/gm';
 import { installFit } from './ui/fit';
+import { ToolWindows } from './ui/windows';
 
 const store = new Store();
 // Session Player regions regenerate their notes after any structural change (resize, undo, open…). Registered first.
@@ -163,6 +164,7 @@ const autosave = new Autosave(store, engine);
 cmd.autosave = autosave;
 autosave.onSaved = () => { tracks.setSaved(autosave.lastSaved); cmd.refreshRecent(); };
 
+new ToolWindows(cmd);
 installFit(f => store.on(k => { if (k === 'view' || k === 'structure') f(); }));
 
 // Reopen the last autosaved project; first visit (or no storage) gets the demo song.

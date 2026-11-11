@@ -4,6 +4,8 @@ import { PLUGINS, PluginInstance } from './plugins';
 import { INSTRUMENTS, Voice } from './instruments';
 import { Note, uid, Store as StoreT } from '../model';
 import { applyAutomation, autoParams, autoActive, valueAt } from '../automation';
+import { vcaOffset, vcaMuted } from '../groups';
+import { withCrossfades } from '../crossfade';
 import { expandRegion, packTakes, compOf, setComp, trimFolderStart } from '../takes';
 import { refreshFlex } from '../flex';
 import { ensureWorklets, workletsReady } from './worklets';
@@ -132,7 +134,7 @@ export class Engine {
     const now = this.ctx.currentTime;
     for (const t of tracks) {
       const s = this.strip(t);
-      s.input.gain.setTargetAtTime(dbToGain(t.volume), now, 0.01);
+      s.input.gain.setTargetAtTime(dbToGain(t.volume + vcaOffset(this.store, t)), now, 0.01);
       s.pan.pan.setTargetAtTime(t.pan, now, 0.01);
       s.muteGain.gain.setTargetAtTime(audibleBySolo(this.store, t) ? 1 : 0, now, 0.005);
       // Track Stack routing: children feed their stack's channel instead of the master.
@@ -746,7 +748,7 @@ export class Engine {
     const channel = (t: Track) => {
       const g = off.createGain(); const p = off.createStereoPanner();
       const audible = audibleBySolo(store, t);
-      g.gain.value = audible ? dbToGain(t.volume) : 0; p.pan.value = t.pan;
+      g.gain.value = audible ? dbToGain(t.volume + vcaOffset(store, t)) : 0; p.pan.value = t.pan;
       g.connect(p); p.connect((t.parent && folderIn.get(t.parent)) || masterIn);
       handles.set(t.id, { g, p, sends: new Map() });
       return { head: chain(t.inserts, g) as GainNode, post: g };
@@ -807,7 +809,7 @@ export class Engine {
           const fxTouched = new Set<string>();
           for (const [key, pts] of Object.entries(t.auto!)) {
             const v = valueAt(pts, beat); if (v == null) continue;
-            if (key === 'volume') hd.g.gain.value = audible ? dbToGain(v) : 0;
+            if (key === 'volume') hd.g.gain.value = audible ? dbToGain(v + vcaOffset(store, t)) : 0;
             else if (key === 'pan') hd.p.pan.value = v;
             else if (key.startsWith('send:')) { const sg = hd.sends.get(key.slice(5)); if (sg) sg.gain.value = dbToGain(v); }
             else if (key.startsWith('fx:')) fxTouched.add(key.split(':')[1]);
@@ -840,7 +842,7 @@ export class Engine {
 
 /** Solo rules: aux channels are solo-safe; a soloed stack lets its children through; a soloed child keeps its stack open. */
 export function audibleBySolo(store: Store, t: Track) {
-  if (t.mute) return false;
+  if (t.mute || vcaMuted(store, t)) return false;
   if (t.kind === 'aux') return true;
   const tracks = store.project.tracks;
   if (!tracks.some(x => x.solo)) return true;
@@ -855,6 +857,7 @@ export function audibleBySolo(store: Store, t: Track) {
  * `from` = seconds into the region where playback starts, `dur` = seconds that will play.
  */
 export function applyEnvelope(p: AudioParam, r: Region, st: Store, when: number, from: number, dur: number) {
+  r = withCrossfades(st, r);
   const g = dbToGain(r.gain ?? 0);
   const rEnd = r.start + r.length;
   const len = st.secs(r.start, rEnd), fi = st.secs(r.start, r.start + (r.fadeIn ?? 0)), fo = st.secs(rEnd - (r.fadeOut ?? 0), rEnd);

@@ -1,5 +1,5 @@
 // All user-facing commands live here so buttons, menus and key commands share them.
-import { Store, Region, Track, ToolId, Insert, uid, cloneRegion, isMidi } from './model';
+import { Store, Region, Track, ToolId, Insert, uid, cloneRegion, isMidi, ArrSection, ChordEvent } from './model';
 import { isDrumKit } from './audio/instruments';
 import { INSTRUMENTS, InstType, newInstrument } from './audio/instruments';
 import { PluginType, PLUGINS, MAX_INSERTS, defaultParams } from './audio/plugins';
@@ -19,6 +19,9 @@ import type { WamRef } from './audio/wam';
 import type { NativeRef } from './audio/native';
 import { pluginPrefs } from './plugin-prefs';
 import { gmName } from './audio/gm';
+import { linked, createGroup, deleteGroup } from './groups';
+import { addSection, duplicateSection, deleteSection, moveSection } from './arranger';
+import { addChord, intervals, followChords, chordNotes } from './chords';
 import { generalPrefs } from './general-prefs';
 import { nativeSave, shareFile, isTauri } from './platform';
 import { newPattern, generatePattern, patternBeats, clonePattern } from './pattern';
@@ -150,8 +153,143 @@ export class Commands {
   deleteSelected = () => {
     const sel = this.ui.selectedRegionIds;
     if (!sel.size) return;
-    this.edit(() => { this.store.project.regions = this.store.project.regions.filter(r => !sel.has(r.id)); sel.clear(); });
+    this.edit(() => {
+      const gone = this.store.project.regions.filter(r => sel.has(r.id)).sort((a, b) => b.start - a.start);
+      this.store.project.regions = this.store.project.regions.filter(r => !sel.has(r.id)); sel.clear();
+      // Shuffle mode: what came after each deleted region slides left to close the gap
+      if (this.ui.editMode === 'shuffle') for (const r of gone) this.shuffleShift(r.trackId, r.start + r.length, -r.length);
+    });
   };
+  /** Moves every region on a track that starts at/after `from` by `by` beats (Shuffle edit mode). */
+  shuffleShift(trackId: string, from: number, by: number) {
+    for (const r of this.store.project.regions) if (r.trackId === trackId && r.start >= from - 1e-6) r.start = Math.max(0, r.start + by);
+  }
+  setEditMode = (m: 'slip' | 'grid' | 'shuffle') => {
+    this.ui.editMode = m; this.store.emit('view');
+    toast(m === 'slip' ? 'Slip: regions move freely (no snapping)' : m === 'grid' ? 'Grid: edits snap to the grid' : 'Shuffle: deleting or trimming a region slides the regions after it');
+  };
+
+  // ---------- Clip Gain + Strip Silence (Pro Tools) ----------
+  private audioSel() { return this.store.selectedRegions().filter(r => r.kind !== 'midi'); }
+  clipGain = (delta: number | null) => {
+    const sel = this.audioSel(); if (!sel.length) { toast('Select audio regions first'); return; }
+    this.edit(() => { for (const r of sel) { const g = delta == null ? 0 : Math.max(-36, Math.min(12, Math.round(((r.gain ?? 0) + delta) * 10) / 10)); r.gain = g || undefined; } });
+  };
+  /** Removes the quiet parts of the selected audio regions, leaving one region per sound. Returns how many regions it made. */
+  stripSilence = (o: { threshold: number; minSilence: number; minRegion: number; pre: number; post: number }, preview = false) => {
+    const st = this.store;
+    const sel = st.selectedRegions().filter(r => r.kind !== 'midi' && !r.takes && !r.flex?.on && st.buffers.has(r.bufferId));
+    if (!sel.length) { if (!preview) toast('Select audio regions (not take folders or Flex regions)'); return 0; }
+    const thr = Math.pow(10, o.threshold / 20);
+    const plan: { r: Region; segs: [number, number][] }[] = [];
+    for (const r of sel) {
+      const buf = st.buffers.get(r.bufferId)!, sr = buf.sampleRate;
+      const dur = Math.min(st.secs(r.start, r.start + r.length), buf.duration - r.offset);
+      const win = Math.max(1, Math.round(sr * 0.01)), i0 = Math.floor(r.offset * sr), n = Math.floor(dur * sr / win);
+      const chans = Array.from({ length: buf.numberOfChannels }, (_, c) => buf.getChannelData(c));
+      const loud: boolean[] = [];
+      for (let k = 0; k < n; k++) {
+        let m = 0; const a = i0 + k * win;
+        for (const d of chans) for (let i = a; i < a + win && i < d.length; i++) { const v = Math.abs(d[i]); if (v > m) m = v; }
+        loud.push(m >= thr);
+      }
+      // sound segments in seconds (region-relative), small gaps bridged, short blips dropped, then padded
+      let segs: [number, number][] = [];
+      for (let k = 0; k < n;) { if (!loud[k]) { k++; continue; } let e = k; while (e < n && loud[e]) e++; segs.push([k * 0.01, e * 0.01]); k = e; }
+      const merged: [number, number][] = [];
+      for (const sg of segs) { const last = merged[merged.length - 1]; if (last && sg[0] - last[1] < o.minSilence / 1000) last[1] = sg[1]; else merged.push([...sg]); }
+      segs = merged.filter(([a, b]) => b - a >= o.minRegion / 1000).map(([a, b]) => [Math.max(0, a - o.pre / 1000), Math.min(dur, b + o.post / 1000)] as [number, number]);
+      plan.push({ r, segs });
+    }
+    const total = plan.reduce((a, p) => a + p.segs.length, 0);
+    if (preview) return total;
+    this.edit(() => {
+      const ids = new Set<string>();
+      for (const { r, segs } of plan) {
+        this.store.project.regions = this.store.project.regions.filter(x => x.id !== r.id);
+        segs.forEach(([a, b], i) => {
+          const start = st.beatAfter(r.start, a), end = st.beatAfter(r.start, b);
+          const nr = cloneRegion(r, { id: uid('r'), start, length: end - start, offset: r.offset + a, name: `${r.name}.${i + 1}`, fadeIn: Math.min(0.03, (end - start) / 4), fadeOut: Math.min(0.06, (end - start) / 4) });
+          this.store.project.regions.push(nr); ids.add(nr.id);
+        });
+      }
+      this.ui.selectedRegionIds = ids;
+    });
+    toast(`Strip Silence: ${total} region${total === 1 ? '' : 's'}`);
+    return total;
+  };
+  openStripSilence: () => void = () => {};
+
+  // ---------- Arranger Track (Cubase) ----------
+  private split = (r: Region, at: number) => this.splitRegion(r, at);
+  private arr = (id: string) => (this.store.project.arranger ?? []).find(s => s.id === id);
+  addArrSection = (b = this.ui.playhead) => {
+    let made: ArrSection | null = null;
+    this.edit(() => { made = addSection(this.store, b); });
+    if (!made) toast('There is already a section there');
+    return made as ArrSection | null;
+  };
+  arrRename = (id: string, name: string) => { const s = this.arr(id); const n = name.trim().slice(0, 30); if (s && n) this.edit(() => (s.name = n)); };
+  arrColor = (id: string, c: string) => { const s = this.arr(id); if (s) this.edit(() => (s.color = c)); };
+  arrLength = (id: string, bars: number) => { const s = this.arr(id); if (s) this.edit(() => (s.len = Math.max(1, bars) * this.store.beatsPerBar)); };
+  arrDuplicate = (id: string) => { const s = this.arr(id); if (s) { this.edit(() => duplicateSection(this.store, this.split, s)); toast(`“${s.name}” duplicated with all its tracks`); } };
+  arrDelete = (id: string) => { const s = this.arr(id); if (s) { this.edit(() => deleteSection(this.store, this.split, s)); toast(`“${s.name}” removed from the song`); } };
+  arrRemoveOnly = (id: string) => { this.edit(() => { this.store.project.arranger = (this.store.project.arranger ?? []).filter(s => s.id !== id); }); };
+  arrMove = (id: string, to: number) => {
+    const s = this.arr(id); if (!s) return;
+    const at = Math.max(0, Math.round(to / this.store.beatsPerBar) * this.store.beatsPerBar);
+    if (at > s.b - 1e-6 && at < s.b + s.len + 1e-6) return;
+    this.edit(() => moveSection(this.store, this.split, s, at));
+  };
+  arrCycle = (id: string) => { const s = this.arr(id); if (!s) return; this.ui.cycle = { on: true, start: s.b, end: s.b + s.len }; this.locate(s.b); this.store.emit('transport'); this.engine.resync(); };
+
+  // ---------- Chord Track (Cubase) ----------
+  setChord = (b: number, root: number, q: string) => { let c: ChordEvent | null = null; this.edit(() => { c = addChord(this.store, Math.max(0, this.store.snapBeat(b)), root, q); }); this.auditionChord(root, q); return c as ChordEvent | null; };
+  deleteChord = (id: string) => this.edit(() => { this.store.project.chords = (this.store.project.chords ?? []).filter(c => c.id !== id); });
+  moveChord = (id: string, b: number) => { const c = (this.store.project.chords ?? []).find(x => x.id === id); if (c) this.edit(() => { c.b = Math.max(0, b); this.store.project.chords!.sort((x, y) => x.b - y.b); }); };
+  auditionChord = (root: number, q: string) => {
+    const t = this.store.track(this.ui.selectedTrackId);
+    const inst = t?.kind === 'inst' && !isDrumKit(t.instrument) ? t : this.store.project.tracks.find(x => x.kind === 'inst' && !isDrumKit(x.instrument));
+    if (!inst) return;
+    for (const i of intervals(q)) this.engine.audition(inst.id, 60 + ((root % 12) + i), 85, 0.9);
+  };
+  followChordTrack = () => {
+    if (!(this.store.project.chords ?? []).length) { toast('Add chords to the Chord Track first'); return; }
+    const sel = this.store.selectedRegions().filter(r => isMidi(r) && !r.session && !r.pattern && !isDrumKit(this.store.track(r.trackId)?.instrument));
+    if (!sel.length) { toast('Select MIDI regions (not drums) to fit to the chords'); return; }
+    let n = 0;
+    this.edit(() => { for (const r of sel) n += followChords(this.store, r.notes ?? [], r.start); });
+    toast(`${n} note${n === 1 ? '' : 's'} moved onto the chords`);
+  };
+  createChordRegion = (rhythm: 'whole' | 'beats' = 'whole') => {
+    const ch = [...(this.store.project.chords ?? [])].sort((a, b) => a.b - b.b);
+    if (!ch.length) { toast('Add chords to the Chord Track first'); return; }
+    let t: Track | undefined;
+    const bpb = this.store.beatsPerBar;
+    const from = Math.floor(ch[0].b / bpb) * bpb, to = Math.ceil((ch[ch.length - 1].b + bpb) / bpb) * bpb;
+    this.edit(() => {
+      // its own track, so it never lands on top of an existing part
+      t = this.store.addTrack('Chords', true, 'inst', newInstrument('gm'));
+      const r: Region = { id: uid('r'), kind: 'midi', notes: chordNotes(this.store, from, to, { bass: true, rhythm }), trackId: t.id, bufferId: '', name: 'Chord Track', start: from, length: to - from, offset: 0, muted: false };
+      this.store.project.regions.push(r); this.ui.selectedRegionIds = new Set([r.id]);
+    });
+    toast('Chord region created from the Chord Track');
+  };
+
+  // ---------- Tap Tempo ----------
+  private taps: number[] = [];
+  tapTempo = () => {
+    const now = performance.now();
+    if (this.taps.length && now - this.taps[this.taps.length - 1] > 2000) this.taps = [];
+    this.taps.push(now); this.taps = this.taps.slice(-6);
+    if (this.taps.length < 3) { toast(this.taps.length === 1 ? 'Tap Tempo: keep tapping on the beat…' : 'Tap Tempo: one more…'); return; }
+    const iv = this.taps.slice(1).map((t, i) => t - this.taps[i]);
+    const bpm = Math.round(60000 / (iv.reduce((a, b) => a + b, 0) / iv.length));
+    this.setTempo(bpm);
+    toast(`Tempo ${this.clampBpm(bpm)} BPM`);
+  };
+  openTuner: () => void = () => {};
+  openLocations: () => void = () => {};
   selectAll = () => { this.ui.selectedRegionIds = new Set(this.store.project.regions.map(r => r.id)); this.store.emit('structure'); };
 
   splitRegion(r: Region, at: number) {
@@ -505,7 +643,11 @@ export class Commands {
       if (!s.size && this.ui.selectedTrackId) s.add(this.ui.selectedTrackId);
       s.has(id) && s.size > 1 ? s.delete(id) : s.add(id);
     }
-    else this.ui.selectedTrackIds = new Set([id]);
+    else {
+      // a grouped track selects its whole group (when the group links selection)
+      const t = this.store.track(id);
+      this.ui.selectedTrackIds = new Set(t ? linked(this.store, t, 'linkSel').map(x => x.id) : [id]);
+    }
     this.ui.selectedTrackId = id;
     this.store.emit('structure');
   };
@@ -530,6 +672,27 @@ export class Commands {
    * Fader/knob gestures call this. In Touch mode during playback the movement is written as automation.
    * phase 'start' | 'value' | 'end'
    */
+  // ---------- Track Groups + VCA ----------
+  groupSelectedTracks = () => {
+    const ids = [...new Set([...this.ui.selectedTrackIds, this.ui.selectedTrackId ?? ''])].filter(id => { const t = this.store.track(id); return t && t.kind !== 'aux'; });
+    if (ids.length < 2) { toast('Select two or more tracks (Shift-click or ⌘-click their headers), then group them'); return; }
+    this.store.checkpoint();
+    const g = createGroup(this.store, ids);
+    this.store.emit('structure'); this.store.emit('mix');
+    toast(`${g.name}: ${ids.length} tracks. Their volume, mute, solo and selection are linked. View › Groups & VCA for the VCA fader.`);
+    this.openGroups();
+  };
+  removeFromGroup = (id: string) => { const t = this.store.track(id); if (!t?.group) return; this.store.checkpoint(); delete t.group; this.store.emit('structure'); this.store.emit('mix'); };
+  deleteGroup = (gid: string) => { this.store.checkpoint(); deleteGroup(this.store, gid); this.store.emit('structure'); this.store.emit('mix'); };
+  openGroups: () => void = () => {};
+
+  /** Sets a track's fader; grouped tracks with linked volume move by the same amount (keeping their balance). */
+  setTrackVolume = (t: Track, db: number) => {
+    const d = db - t.volume;
+    t.volume = db;
+    if (d) for (const x of linked(this.store, t, 'linkVol')) if (x !== t) x.volume = Math.max(-60, Math.min(6, x.volume + d));
+    this.store.emit('mix');
+  };
   gesture = (trackId: string, key: string, phase: 'start' | 'value' | 'end', value?: number) => {
     const t = this.store.project.tracks.find(x => x.id === trackId);
     if (!t) return;
@@ -736,7 +899,10 @@ export class Commands {
   };
   toggleTrack = (key: 'mute' | 'solo' | 'armed' | 'monitor', id = this.ui.selectedTrackId) => {
     const t = this.store.track(id); if (!t) return;
-    t[key] = !t[key];
+    const v = !t[key];
+    // grouped tracks mute/solo together
+    const all = key === 'mute' ? linked(this.store, t, 'linkMute') : key === 'solo' ? linked(this.store, t, 'linkSolo') : [t];
+    for (const x of all) x[key] = v;
     this.store.emit('structure');
     if (key === 'monitor') this.engine.syncMonitor().then(err => { if (err) toast(err); else if (t.monitor) toast('Input monitoring on. Use headphones to avoid feedback.'); });
   };

@@ -28,6 +28,13 @@ export interface AutoPoint { b: number; v: number } // beat, value in the parame
 export type AutoMode = 'off' | 'read' | 'touch';
 export interface TempoEvent { id: string; b: number; bpm: number } // tempo change at beat b (b > 0); project.tempo applies from 0
 export interface Marker { id: string; b: number; name: string }
+/** Track group (Pro Tools style): linked edits + a VCA level (dB) added to every member's fader. */
+export interface TrackGroup { id: string; name: string; color: string; vca: number; vcaMute?: boolean; linkVol: boolean; linkMute: boolean; linkSolo: boolean; linkSel: boolean }
+/** Arranger Track section (Cubase style). */
+export interface ArrSection { id: string; name: string; b: number; len: number; color: string }
+/** Chord Track event: root pitch class + quality (see chords.ts). */
+export interface ChordEvent { id: string; b: number; root: number; q: string }
+export type EditMode = 'slip' | 'grid' | 'shuffle';
 export interface Take { id: string; bufferId: string; offset: number; name: string } // offset: seconds into the file at the folder's start (may be negative)
 export interface CompSeg { s: number; e: number; take: string } // beats, region-relative
 export interface FlexMarker { id: string; src: number; b: number } // source seconds -> region-relative beat
@@ -55,6 +62,7 @@ export interface Track {
   autoShow?: string; // param key shown in the lane
   /** Freeze file (rendered through native VST3/AU plug-ins); `sig` = what it was rendered from. */
   freeze?: { bufferId: string; sig: string };
+  group?: string; // TrackGroup id
 }
 
 export interface Region {
@@ -95,6 +103,9 @@ export interface Project {
   markers: Marker[];
   key?: number; // key signature in fifths (-6..6), for the Score
   demoVersion?: number; // set on the built-in demo song
+  groups?: TrackGroup[];
+  arranger?: ArrSection[];
+  chords?: ChordEvent[];
   movie?: MovieInfo; // video synced to the timeline (the file itself lives in Store.movieBlob)
 }
 
@@ -126,6 +137,7 @@ export interface UIState {
   tool: ToolId;
   cmdTool: ToolId;
   snap: SnapMode;
+  editMode?: EditMode; // Slip (free), Grid (snap), Shuffle (snap + edits close/open gaps)
   pxPerBeat: number;
   trackH: number;
   showInspector: boolean;
@@ -251,10 +263,10 @@ export class Store {
   }
 
   // Undo works on snapshots of tracks + regions (buffers are immutable and shared).
-  private snapshot() { const p = this.project; return JSON.stringify({ t: p.tracks, r: p.regions, tempo: p.tempo, mi: p.masterInserts, ax: p.auxes, te: p.tempoEvents, mk: p.markers, name: p.name, key: p.key ?? 0, mv: p.movie ?? null }); }
+  private snapshot() { const p = this.project; return JSON.stringify({ t: p.tracks, r: p.regions, tempo: p.tempo, mi: p.masterInserts, ax: p.auxes, te: p.tempoEvents, mk: p.markers, name: p.name, key: p.key ?? 0, mv: p.movie ?? null, g: p.groups ?? [], ar: p.arranger ?? [], ch: p.chords ?? [] }); }
   private restore(s: string) {
     const o = JSON.parse(s);
-    this.project.tracks = o.t; this.project.regions = o.r; this.project.tempo = o.tempo; this.project.masterInserts = o.mi; this.project.auxes = o.ax ?? []; this.project.tempoEvents = o.te ?? []; this.project.markers = o.mk ?? []; if (o.name) this.project.name = o.name; this.project.key = o.key ?? 0; this.project.movie = o.mv && this.movieBlob && o.mv.id === this.movieId ? o.mv : undefined;
+    this.project.tracks = o.t; this.project.regions = o.r; this.project.tempo = o.tempo; this.project.masterInserts = o.mi; this.project.auxes = o.ax ?? []; this.project.tempoEvents = o.te ?? []; this.project.markers = o.mk ?? []; if (o.name) this.project.name = o.name; this.project.key = o.key ?? 0; this.project.groups = o.g ?? []; this.project.arranger = o.ar ?? []; this.project.chords = o.ch ?? []; this.project.movie = o.mv && this.movieBlob && o.mv.id === this.movieId ? o.mv : undefined;
     const ids = new Set(this.project.regions.map(r => r.id));
     for (const id of [...this.ui.selectedRegionIds]) if (!ids.has(id)) this.ui.selectedRegionIds.delete(id);
     if (!this.track(this.ui.selectedTrackId)) this.ui.selectedTrackId = this.project.tracks[0]?.id ?? null;
@@ -295,7 +307,7 @@ export class Store {
     if (pxPerBeat >= 14) return 1;
     return this.beatsPerBar;
   }
-  snapBeat(b: number) { const u = this.snapUnit(); return u ? Math.round(b / u) * u : b; }
+  snapBeat(b: number) { if (this.ui.editMode === 'slip') return b; const u = this.snapUnit(); return u ? Math.round(b / u) * u : b; }
 
   formatPos(beats: number) {
     const bpb = this.beatsPerBar;

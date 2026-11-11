@@ -103,6 +103,21 @@ export class KeyMap {
       k('zoomOut', 'Zoom Out', 'View', ['Mod+ArrowLeft'], () => c.zoom(1 / 1.4)),
       k('browser', 'Plug-in Browser', 'View', ['Mod+Shift+P'], () => c.openPluginBrowser('fx')),
       k('keyCmds', 'Key Commands', 'View', ['Alt+K'], () => c.openSettings('keys')),
+      // Pro Tools
+      k('modeShuffle', 'Edit Mode: Shuffle', 'Edit', ['F1'], () => c.setEditMode('shuffle')),
+      k('modeSlip', 'Edit Mode: Slip', 'Edit', ['F2'], () => c.setEditMode('slip')),
+      k('modeGrid', 'Edit Mode: Grid', 'Edit', ['F4'], () => c.setEditMode('grid')),
+      k('clipUp', 'Clip Gain +1 dB', 'Edit', ['Mod+Shift+ArrowUp'], () => c.clipGain(1)),
+      k('clipDown', 'Clip Gain −1 dB', 'Edit', ['Mod+Shift+ArrowDown'], () => c.clipGain(-1)),
+      k('stripSilence', 'Strip Silence…', 'Edit', ['Mod+U'], () => c.openStripSilence()),
+      k('group', 'Group Selected Tracks', 'Tracks', ['Mod+G'], c.groupSelectedTracks),
+      k('locations', 'Memory Locations', 'View', ['Mod+L'], () => c.openLocations()),
+      ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => k(`loc${n}`, `Go to Location ${n}`, 'Transport', [`Alt+${n}`], () => { const m = c.store.project.markers[n - 1]; if (m) c.locate(m.b); })),
+      // Cubase
+      k('tap', 'Tap Tempo', 'Transport', ['Shift+T'], c.tapTempo),
+      k('tuner', 'Tuner', 'View', ['Mod+Alt+T'], () => c.openTuner()),
+      k('arrAdd', 'Add Arranger Section', 'Tracks', ['Mod+Alt+R'], () => c.addArrSection()),
+      k('followChords', 'Make MIDI Follow Chord Track', 'MIDI', ['Mod+Alt+C'], c.followChordTrack),
     ];
     this.defaults = Object.fromEntries(this.list.map(kc => [kc.id, [...kc.keys]]));
     this.apply();

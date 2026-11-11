@@ -140,7 +140,8 @@ jobs:
         run: |
           npx tauri android init --ci
           node scripts/android-setup.mjs
-          npx tauri icon app-icon.png
+          # launchers mask icons (circle, squircle…): this version keeps the logo inside the safe zone
+          npx tauri icon brand/ozmix-icon-android.png
       - name: Build APK + AAB
         # arm64 only: the web assets (incl. sounds) are embedded in each ABI's library, so a universal APK is 4× larger
         run: npx tauri android build --apk --aab --ci --target aarch64

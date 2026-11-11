@@ -1,6 +1,6 @@
 // Run after `tauri android init`: adds the permissions the DAW needs to the generated Android project.
 // (src-tauri/gen/ is generated, so this is re-applied whenever the project is re-initialised.)
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 
 const path = 'src-tauri/gen/android/app/src/main/AndroidManifest.xml';
 if (!existsSync(path)) { console.error(`${path} not found: run "tauri android init" first`); process.exit(1); }
@@ -23,3 +23,49 @@ if (!xml.includes('resizeableActivity')) xml = xml.replace(/<application\b/, '<a
 
 writeFileSync(path, xml);
 console.log('AndroidManifest.xml: audio permissions added');
+
+// Full screen (sticky immersive): the status bar and navigation bar are hidden, so taps and drags at the
+// top of the app don't pull down the notification shade. A swipe from the edge shows the bars briefly.
+const find = (dir) => {
+  for (const f of readdirSync(dir)) {
+    const p = `${dir}/${f}`;
+    if (statSync(p).isDirectory()) { const r = find(p); if (r) return r; }
+    else if (f === 'MainActivity.kt') return p;
+  }
+  return null;
+};
+const act = find('src-tauri/gen/android/app/src/main/java');
+if (!act) { console.error('MainActivity.kt not found'); process.exit(1); }
+const pkg = /^package\s+([\w.]+)/m.exec(readFileSync(act, 'utf8'))[1];
+writeFileSync(act, `package ${pkg}
+
+import android.os.Bundle
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+
+class MainActivity : TauriActivity() {
+  override fun onCreate(savedInstanceState: Bundle?) {
+    super.onCreate(savedInstanceState)
+    immersive()
+  }
+
+  override fun onResume() {
+    super.onResume()
+    immersive()
+  }
+
+  override fun onWindowFocusChanged(hasFocus: Boolean) {
+    super.onWindowFocusChanged(hasFocus)
+    if (hasFocus) immersive()
+  }
+
+  private fun immersive() {
+    WindowCompat.setDecorFitsSystemWindows(window, false)
+    val c = WindowInsetsControllerCompat(window, window.decorView)
+    c.hide(WindowInsetsCompat.Type.systemBars())
+    c.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+  }
+}
+`);
+console.log(`${act}: full-screen immersive mode`);

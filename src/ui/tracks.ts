@@ -1,5 +1,6 @@
 // Tracks area: local menu bar, track headers, ruler and the canvas timeline with region editing.
 import { Region, TOOLS, ToolId, SnapMode, PEAK_BUCKET, uid, cloneRegion, isMidi, Note } from '../model';
+import { isDrumKit } from '../audio/instruments';
 import { Commands } from '../commands';
 import { h, icon, openMenu, toast, MenuItem, inlineEdit } from './dom';
 import { Track, AutoPoint, COLOR_CHOICES } from '../model';
@@ -208,7 +209,7 @@ export class TracksArea {
         this.volInputs.set(t.id, vol);
         const dim = t.mute || (all.some(x => x.solo) && !t.solo && !(t.parent && store.track(t.parent)?.solo) && !(t.kind === 'folder' && all.some(x => x.parent === t.id && x.solo)));
         const isFolder = t.kind === 'folder';
-        const iconName = isFolder ? 'folder' : t.kind === 'inst' ? (t.instrument?.type === 'drums' ? 'drum' : t.instrument?.type === 'sampler' ? 'wave' : 'keys') : 'wave';
+        const iconName = isFolder ? 'folder' : t.kind === 'inst' ? (isDrumKit(t.instrument) ? 'drum' : t.instrument?.type === 'sampler' ? 'wave' : 'keys') : 'wave';
         const iconBtn: HTMLButtonElement = h('button', { class: 'hdr-icon', style: { color: t.color, background: t.color + '26' }, 'aria-label': `Track menu for ${t.name}`, title: 'Track menu (or right-click the header)',
           onPointerdown: (e: PointerEvent) => e.stopPropagation(), onClick: (e: MouseEvent) => { e.stopPropagation(); this.trackMenu(iconBtn, t.id, name); } }, icon(iconName, 16));
         const row = h('div', { class: 'hdr' + (sel ? ' selected' : '') + (dim ? ' dim' : '') + (isFolder ? ' folder' : '') + (t.parent ? ' child' : ''), style: { height: `${H}px` },

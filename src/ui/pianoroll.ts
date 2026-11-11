@@ -1,5 +1,6 @@
 // Piano Roll editor for MIDI regions (bottom editor area, opened with P or a double-click).
 import { Note, Region } from '../model';
+import { isDrumKit } from '../audio/instruments';
 import { Commands } from '../commands';
 import { DRUM_NAMES, noteName } from '../audio/instruments';
 import { h, icon, openMenu, toast, MenuItem } from './dom';
@@ -81,7 +82,7 @@ export class PianoRoll {
   // ---------- state ----------
   get region(): Region | undefined { const id = this.cmd.store.ui.editorRegionId; const r = id ? this.cmd.store.region(id) : undefined; return r?.kind === 'midi' && !r.session && !r.pattern ? r : undefined; }
   private get track() { const r = this.region; return r ? this.cmd.store.track(r.trackId) : undefined; }
-  private get isDrums() { return this.track?.instrument?.type === 'drums'; }
+  private get isDrums() { return isDrumKit(this.track?.instrument); }
   private get KW() { return this.isDrums ? 104 : 56; }
   private get ppb() { return this.cmd.store.ui.prPpb; }
 

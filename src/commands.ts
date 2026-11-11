@@ -1,5 +1,6 @@
 // All user-facing commands live here so buttons, menus and key commands share them.
 import { Store, Region, Track, ToolId, Insert, uid, cloneRegion, isMidi } from './model';
+import { isDrumKit } from './audio/instruments';
 import { INSTRUMENTS, InstType, newInstrument } from './audio/instruments';
 import { PluginType, PLUGINS, MAX_INSERTS, defaultParams } from './audio/plugins';
 import { Engine } from './audio/engine';
@@ -17,6 +18,7 @@ import { MovieController, probeMovie } from './movie';
 import type { WamRef } from './audio/wam';
 import type { NativeRef } from './audio/native';
 import { pluginPrefs } from './plugin-prefs';
+import { gmName } from './audio/gm';
 import { generalPrefs } from './general-prefs';
 import { nativeSave, shareFile, isTauri } from './platform';
 import { newPattern, generatePattern, patternBeats, clonePattern } from './pattern';
@@ -411,6 +413,17 @@ export class Commands {
   pastePluginSettings = (owner: string, id: string) => { if (this.fxClipboard && this.canPastePlugin(owner, id)) this.applyPluginPreset(owner, id, this.fxClipboard.params); };
   savePluginPreset = (owner: string, id: string, name: string) => { const ins = this.store.insertsOf(owner).find(x => x.id === id); if (ins && name.trim()) { pluginPrefs.savePreset(ins.type, name.trim(), ins.params); toast(`Preset “${name.trim()}” saved`); } };
 
+  /** Picks a Sound Library instrument for a track (keeps its other instrument settings). */
+  setGmProgram = (trackId: string, prog: number) => {
+    const t = this.store.track(trackId); if (!t || t.kind !== 'inst') return;
+    this.editFx(() => {
+      if (t.instrument?.type !== 'gm') t.instrument = newInstrument('gm');
+      t.instrument.params = { ...t.instrument.params, program: prog };
+      t.instrument.preset = gmName(prog);
+    });
+    this.engine.loadSampledInstruments();
+    this.openPlugin(trackId, 'inst');
+  };
   /** Switches a track's instrument (built-in or a Web Audio Module). */
   setInstrumentType = (trackId: string, type: InstType, wam?: WamRef) => {
     const t = this.store.track(trackId); if (!t || t.kind !== 'inst') return;
@@ -583,12 +596,14 @@ export class Commands {
   newTrack = () => { this.edit(() => this.store.addTrack()); };
   newInstrumentTrack = (type: InstType = 'synth', preset?: string) => {
     const inst = newInstrument(type, preset);
-    this.edit(() => { const t = this.store.addTrack(type === 'drums' ? 'Drum Kit' : type === 'sampler' ? 'Sampler' : type === 'epiano' ? 'E-Piano' : type === 'organ' ? 'Organ' : inst.preset, true, 'inst', inst); t.armed = false; });
+    this.edit(() => { const t = this.store.addTrack(type === 'drums' ? 'Electronic Drums' : type === 'sampler' ? 'Sampler' : type === 'epiano' ? 'E-Piano' : type === 'organ' ? 'Organ' : type === 'gm' ? gmName(inst.params.program).replace(' (GM)', '') : inst.preset, true, 'inst', inst); t.armed = false; });
   };
   newTrackMenu = (): [string, string, () => void][] => [
     ['New Audio Track', '⌥⌘A', this.newTrack],
-    ['New Software Instrument Track', '⌥⌘S', () => this.newInstrumentTrack('synth')],
-    ['New Drum Kit Track', '', () => this.newInstrumentTrack('drums')],
+    ['New Software Instrument Track (Grand Piano)', '⌥⌘S', () => this.newInstrumentTrack('gm')],
+    ['New Drum Kit Track', '', () => this.newInstrumentTrack('gm', 'Drum Kit (GM)')],
+    ['New Electronic Drum Kit Track', '', () => this.newInstrumentTrack('drums')],
+    ['New Synth Track', '', () => this.newInstrumentTrack('synth')],
     ['New Sampler Track', '', () => this.newInstrumentTrack('sampler')],
     ['New Electric Piano Track', '', () => this.newInstrumentTrack('epiano')],
     ['New Organ Track', '', () => this.newInstrumentTrack('organ')],
@@ -600,7 +615,7 @@ export class Commands {
   /** Logic-style Session Player: a track plus a generated region covering the song. */
   newSessionTrack = (type: SessionType) => {
     const bpb = this.store.beatsPerBar;
-    const inst = type === 'drums' ? newInstrument('drums') : newInstrument('synth', type === 'bass' ? 'Synth Bass' : 'Electric Piano');
+    const inst = newInstrument('gm', type === 'drums' ? 'Drum Kit (GM)' : type === 'bass' ? 'Finger Bass' : 'Electric Piano (Rhodes)');
     const name = type === 'drums' ? 'Drummer' : type === 'bass' ? 'Session Bass' : 'Session Keys';
     const length = Math.max(8 * bpb, Math.ceil(this.store.songEndBeats() / bpb) * bpb);
     let region: Region | null = null;
@@ -639,7 +654,7 @@ export class Commands {
   createPatternRegion = (trackId: string, start: number, bars = 4) => {
     const t = this.store.track(trackId);
     if (!t || t.kind !== 'inst') { toast('Pattern regions go on software instrument tracks'); return null; }
-    const drums = t.instrument?.type === 'drums';
+    const drums = isDrumKit(t.instrument);
     const pat = newPattern(drums, this.store.project.key ?? 0);
     const r: Region = { id: uid('r'), kind: 'midi', notes: [], trackId, bufferId: '', name: drums ? 'Beat Pattern' : 'Pattern', start, length: Math.max(patternBeats(pat), bars * this.store.beatsPerBar), offset: 0, muted: false, pattern: pat };
     generatePattern(r);
@@ -649,7 +664,7 @@ export class Commands {
   };
   newPatternTrack = () => {
     let id = '';
-    this.edit(() => { const t = this.store.addTrack('Step Sequencer', true, 'inst', newInstrument('drums')); t.armed = false; id = t.id; });
+    this.edit(() => { const t = this.store.addTrack('Step Sequencer', true, 'inst', newInstrument('gm', 'Drum Kit (GM)')); t.armed = false; id = t.id; });
     const bpb = this.store.beatsPerBar;
     this.createPatternRegion(id, Math.floor(this.ui.playhead / bpb) * bpb);
   };
@@ -662,7 +677,7 @@ export class Commands {
   /** Turns a plain MIDI region into a pattern region; its notes become steps on the pattern grid. */
   midiToPattern = (r: Region) => {
     if (r.kind !== 'midi' || r.pattern || r.session) return;
-    const t = this.store.track(r.trackId), drums = t?.instrument?.type === 'drums';
+    const t = this.store.track(r.trackId), drums = isDrumKit(t?.instrument);
     const pitches = [...new Set((r.notes ?? []).map(n => n.p))].sort((a, b) => drums ? a - b : b - a);
     if (!pitches.length) { toast('The region has no notes to convert'); return; }
     if (pitches.length > 24) { toast('Too many different pitches for the step grid (max 24)'); return; }

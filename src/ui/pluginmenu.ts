@@ -4,6 +4,7 @@ import { PLUGIN_LIST, CATEGORIES, PluginType } from '../audio/plugins';
 import type { WamRef } from '../audio/wam';
 import { NativeRef, NativePluginInfo, inDesktopApp, scanNative } from '../audio/native';
 import { pluginPrefs } from '../plugin-prefs';
+import { GM, GM_CATEGORIES, GM_DRUMS } from '../audio/gm';
 import { MenuItem } from './dom';
 
 export type FxPick = (type: PluginType, wam?: WamRef, native?: NativeRef) => void;
@@ -39,14 +40,26 @@ export function fxMenu(cmd: Commands, pick: FxPick, current?: { type: PluginType
     ...(inDesktopApp() ? [{ label: 'VST3 / Audio Units', sub: nativeSub } as MenuItem] : [])];
 }
 
+/** Sound Library: the 128 General MIDI instruments by family (8 each) and the drum kit. */
+export function gmLibraryMenu(pick: (prog: number) => void, current?: number): MenuItem[] {
+  return [
+    ...GM_CATEGORIES.map((c, ci) => ({ label: c, checked: current != null && current < 128 && Math.floor(current / 8) === ci, sub: GM.slice(ci * 8, ci * 8 + 8).map((g, i) => [g[1], '', () => pick(ci * 8 + i), current === ci * 8 + i] as MenuItem) }) as MenuItem),
+    '-',
+    [GM[GM_DRUMS][1], '', () => pick(GM_DRUMS), current === GM_DRUMS],
+  ];
+}
+
 /** Menu for choosing a channel's instrument. */
 export function instrumentMenu(cmd: Commands, trackId: string): MenuItem[] {
   const t = cmd.store.track(trackId), cur = t?.instrument;
   const wams = pluginPrefs.wams.filter(w => w.isInstrument);
   return [
-    { header: 'Built-in' },
+    { header: 'Sound Library (real instruments)' },
+    ...gmLibraryMenu(p => cmd.setGmProgram(trackId, p), cur?.type === 'gm' ? Math.round(cur.params.program) : undefined),
+    '-',
+    { header: 'Synthesizers' },
     ['Studio Synth', '', () => cmd.setInstrumentType(trackId, 'synth'), cur?.type === 'synth'],
-    ['Drum Kit', '', () => cmd.setInstrumentType(trackId, 'drums'), cur?.type === 'drums'],
+    ['Electronic Drum Kit', '', () => cmd.setInstrumentType(trackId, 'drums'), cur?.type === 'drums'],
     ['Electric Piano', '', () => cmd.setInstrumentType(trackId, 'epiano'), cur?.type === 'epiano'],
     ['Drawbar Organ', '', () => cmd.setInstrumentType(trackId, 'organ'), cur?.type === 'organ'],
     ['Sampler', '', () => cmd.setInstrumentType(trackId, 'sampler'), cur?.type === 'sampler'],

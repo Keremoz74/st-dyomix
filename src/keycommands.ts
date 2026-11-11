@@ -79,7 +79,7 @@ export class KeyMap {
       k('movie', 'Open Movie', 'File', ['Mod+Alt+O'], c.openMovie),
       k('settings', 'Settings', 'File', ['Mod+Comma'], () => c.openSettings()),
       k('newAudio', 'New Audio Track', 'Track', ['Mod+Alt+A', 'Mod+Alt+N'], c.newTrack),
-      k('newInst', 'New Software Instrument Track', 'Track', ['Mod+Alt+S'], () => c.newInstrumentTrack('synth')),
+      k('newInst', 'New Software Instrument Track', 'Track', ['Mod+Alt+S'], () => c.newInstrumentTrack('gm')),
       k('stack', 'Create Track Stack', 'Track', ['Mod+Shift+D'], c.createStack),
       k('dupTrack', 'New Track with Duplicate Settings', 'Track', ['Mod+D'], c.duplicateTrack),
       k('bip', 'Bounce in Place', 'Track', [mac ? 'Ctrl+B' : 'Mod+Alt+B'], c.bounceInPlace),

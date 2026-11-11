@@ -1,6 +1,7 @@
 // Score editor: standard notation for a MIDI region (grand staff, or a percussion staff for drum kits),
 // with a duration palette for inserting notes, drag to change pitch/time, and a key signature.
 import { Note, Region } from '../model';
+import { isDrumKit } from '../audio/instruments';
 import { Commands } from '../commands';
 import { spell, stepToMidi, keyAlters, KEY_NAMES, DRUM_POS, drumAtPos, layoutBars, beamGroups, Piece } from '../notation';
 import { h, openMenu, toast, MenuItem } from './dom';
@@ -60,7 +61,7 @@ export class ScoreEditor {
     return r?.kind === 'midi' && !r.session && !r.pattern ? r : undefined;
   }
   get visible() { return !this.el.hidden; }
-  private get isDrums() { const r = this.region; return !!r && this.cmd.store.track(r.trackId)?.instrument?.type === 'drums'; }
+  private get isDrums() { const r = this.region; return !!r && isDrumKit(this.cmd.store.track(r.trackId)?.instrument); }
   private get key() { return this.isDrums ? 0 : this.cmd.store.project.key ?? 0; }
   private get value() { return this.dotted ? Math.min(16, Math.round(this.dur * 1.5)) : this.dur; }
 

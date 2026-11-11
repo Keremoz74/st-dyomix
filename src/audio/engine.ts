@@ -9,6 +9,7 @@ import { refreshFlex } from '../flex';
 import { ensureWorklets, workletsReady } from './worklets';
 import { wamEffect, createWam, attachInstrument, detachInstrument, instrumentInstance, sendTransport } from './wam';
 import { audioPrefs } from './prefs';
+import { setDecodeContext, loadBank } from './gm';
 import { generalPrefs } from '../general-prefs';
 
 interface FxChain {
@@ -79,6 +80,7 @@ export class Engine {
     catch { this.ctx = new AC({ latencyHint: 'interactive' }); }
     if (ap.outputId && (this.ctx as any).setSinkId) (this.ctx as any).setSinkId(ap.outputId).catch(() => {});
     ensureWorklets(this.ctx).then(() => this.rebuildPending());
+    setDecodeContext(this.ctx);
     this.master = this.ctx.createGain();
     this.masterChain = { pre: this.ctx.createGain(), fx: new Map(), sig: '?' };
     const split = this.ctx.createChannelSplitter(2);
@@ -182,6 +184,7 @@ export class Engine {
   /** Renders one track's sources (regions, instrument notes) through the given inserts (no fader/pan). */
   async renderTrack(t: Track, inserts: Insert[], tail = 3): Promise<AudioBuffer> {
     const st = this.store, sr = this.ctx.sampleRate;
+    await this.loadSampledInstruments();
     const regs = st.project.regions.filter(r => r.trackId === t.id && !r.muted);
     const endBeat = Math.max(0, ...regs.map(r => r.start + r.length));
     const off = new OfflineAudioContext(2, Math.max(1, Math.ceil((st.secAt(endBeat) + tail) * sr)), sr);
@@ -279,7 +282,14 @@ export class Engine {
   }
 
   /** Connects/disconnects Web Audio Module instruments on instrument tracks. */
+  /** Loads the Sound Library samples every instrument track needs (resolves when all are in, or failed). */
+  loadSampledInstruments() {
+    const progs = new Set(this.store.project.tracks.filter(t => t.kind === 'inst' && t.instrument?.type === 'gm').map(t => Math.round(t.instrument!.params.program)));
+    return Promise.all([...progs].map(p => loadBank(p).catch(() => null)));
+  }
+
   private syncInstruments() {
+    this.loadSampledInstruments();
     for (const t of this.store.project.tracks) {
       if (t.kind !== 'inst') continue;
       const s = this.strip(t), ref = t.instrument?.type === 'wam' ? t.instrument.wam : undefined;
@@ -670,6 +680,7 @@ export class Engine {
   // ---------- bounce ----------
   async bounce(): Promise<Blob> {
     this.flushFlex();
+    await this.loadSampledInstruments();
     await this.beforeBounce();
     const store = this.store, spb = store.spb;
     const endBeats = store.songEndBeats();

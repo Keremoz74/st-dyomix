@@ -23,6 +23,7 @@ import { PluginBrowser } from './ui/pluginbrowser';
 import { SettingsWindow } from './ui/settings';
 import { applyGeneralPrefs } from './general-prefs';
 import { Freezer } from './audio/freeze';
+import { onBankState, GM } from './audio/gm';
 
 const store = new Store();
 // Session Player regions regenerate their notes after any structural change (resize, undo, open…). Registered first.
@@ -59,6 +60,8 @@ cmd.connectMidi = () => midiIn.connect();
 const pluginBrowser = new PluginBrowser(cmd);
 cmd.openPluginBrowser = (mode, trackId) => pluginBrowser.open(mode, trackId);
 engine.onPluginError = msg => toast(msg);
+const warned = new Set<string>();
+onBankState((id, s) => { if (s === 'error' && !warned.has(id)) { warned.add(id); toast(`Couldn't download the “${GM.find(g => g[0] === id)?.[1] ?? id}” sounds — an internet connection is needed the first time. A synth plays instead for now.`); } });
 const freezer = new Freezer(store, engine);
 cmd.freezer = freezer;
 freezer.onStatus = m => { if (m) toast(m); };

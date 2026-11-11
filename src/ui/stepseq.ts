@@ -1,6 +1,7 @@
 // Step Sequencer editor (Logic-style): rows of sounds/pitches × steps, Note / Velocity / Gate edit modes,
 // per-row mute, solo, length and gate, pattern presets, swing, and a running step indicator.
 import { Region } from '../model';
+import { isDrumKit } from '../audio/instruments';
 import { Commands } from '../commands';
 import { DRUM_NAMES } from '../audio/instruments';
 import {
@@ -40,7 +41,7 @@ export class StepSequencer {
     return r?.pattern ? r : undefined;
   }
   get visible() { return !this.el.hidden; }
-  private get drums() { const r = this.region; return !!r && this.cmd.store.track(r.trackId)?.instrument?.type === 'drums'; }
+  private get drums() { const r = this.region; return !!r && isDrumKit(this.cmd.store.track(r.trackId)?.instrument); }
 
   private sync() {
     const r = this.region, ui = this.cmd.store.ui;

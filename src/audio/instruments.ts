@@ -5,8 +5,9 @@ import { ParamDef } from './plugins';
 import { playWamNote, WamRef } from './wam';
 
 import { EPIANO, ORGAN } from './keys';
+import { GM_INST, GM_DRUMS, bankFailed } from './gm';
 
-export type InstType = 'synth' | 'drums' | 'sampler' | 'epiano' | 'organ' | 'wam';
+export type InstType = 'gm' | 'synth' | 'drums' | 'sampler' | 'epiano' | 'organ' | 'wam';
 
 export interface InstrumentState { type: InstType; preset: string; params: Record<string, number>; bufferId?: string; sampleName?: string; wam?: WamRef }
 
@@ -212,7 +213,21 @@ const WAM_INST: InstDef = {
   type: 'wam', name: 'Web Audio Module', params: [], presets: { Default: {} },
   play: (ctx, dest, _p, pitch, vel, when, dur) => playWamNote(ctx, dest, pitch, vel, when, dur),
 };
-export const INSTRUMENTS: Record<InstType, InstDef> = { synth: SYNTH, drums: DRUMS, sampler: SAMPLER, epiano: EPIANO, organ: ORGAN, wam: WAM_INST };
+/** Sound Library (sampled GM instruments). If the samples can't be loaded (offline, never cached), a synth stands in so notes still sound. */
+const GM_SAFE: InstDef = {
+  ...GM_INST,
+  play(ctx, dest, p, pitch, vel, when, dur) {
+    if (bankFailed(p.program)) {
+      if (Math.round(p.program) === GM_DRUMS) return DRUMS.play(ctx, dest, DRUMS.presets['Studio Kit'], pitch, vel, when, dur);
+      return SYNTH.play(ctx, dest, SYNTH.presets['Electric Piano'], pitch, vel, when, dur);
+    }
+    return GM_INST.play(ctx, dest, p, pitch, vel, when, dur);
+  },
+};
+export const INSTRUMENTS: Record<InstType, InstDef> = { gm: GM_SAFE, synth: SYNTH, drums: DRUMS, sampler: SAMPLER, epiano: EPIANO, organ: ORGAN, wam: WAM_INST };
+
+/** Drum kits use the GM drum map (Step Sequencer rows, Score percussion staff, drum names). */
+export const isDrumKit = (i?: InstrumentState) => !!i && (i.type === 'drums' || (i.type === 'gm' && Math.round(i.params.program) === GM_DRUMS));
 
 export function newInstrument(type: InstType, preset?: string): InstrumentState {
   const def = INSTRUMENTS[type];

@@ -65,6 +65,8 @@ jobs:
       - run: npm install
       - name: Build number → version
         run: node scripts/set-version.mjs ${{ github.run_number }}
+      - name: Bundle Sound Library instruments
+        run: node scripts/fetch-sounds.mjs
       # macOS signing + notarization only when the secrets exist (an empty variable makes the build try to sign and fail)
       - name: Apple signing secrets
         if: matrix.name == 'macOS'
@@ -132,6 +134,8 @@ jobs:
       - run: npm install
       - name: Build number → version
         run: node scripts/set-version.mjs ${{ github.run_number }}
+      - name: Bundle Sound Library instruments
+        run: node scripts/fetch-sounds.mjs
       - name: Generate the Android project
         run: |
           npx tauri android init --ci
@@ -183,6 +187,8 @@ jobs:
       - run: npm install
       - name: Build number → version
         run: node scripts/set-version.mjs ${{ github.run_number }}
+      - name: Bundle Sound Library instruments
+        run: node scripts/fetch-sounds.mjs
       - name: Generate the Xcode project
         env:
           APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}

@@ -7,6 +7,7 @@ import { PLUGIN_LIST, CATEGORIES } from '../audio/plugins';
 import { pluginPrefs } from '../plugin-prefs';
 import { wamSettings, DEFAULT_SDK, DEFAULT_CATALOG, fetchCatalog } from '../audio/wam';
 import { KEY_NAMES } from '../notation';
+import { cacheAllInstruments, GM } from '../audio/gm';
 import { inDesktopApp, hostingAvailable } from '../audio/native';
 import { refreshNativeList } from './pluginmenu';
 import { h, toast } from './dom';
@@ -121,6 +122,18 @@ export class SettingsWindow {
           `Current output latency ≈ ${lat.toFixed(1)} ms. Larger buffers avoid crackles with many plug-ins.`),
         this.needsRestart ? h('div', { class: 'set-note' }, 'Sample rate and buffer changes take effect after restarting the audio engine. ',
           h('button', { class: 'tool-btn', onClick: async () => { await this.cmd.autosave?.save(); location.reload(); } }, 'Restart Now')) : null),
+      this.section('Sound Library',
+        h('p', { class: 'set-hint' }, `${GM.length - 1} real instruments + a GM drum kit, sampled from the FluidR3 GM SoundFont by Frank Wen (MIT / CC-BY 3.0). Each instrument downloads the first time it is used and is then kept on this device.`),
+        (() => {
+          const status = h('span', { class: 'set-hint' });
+          const btn: HTMLButtonElement = h('button', { class: 'tool-btn', onClick: async () => {
+            btn.disabled = true;
+            const bad = await cacheAllInstruments((d, n, f) => { status.textContent = `${d} / ${n}${f ? ` (${f} failed)` : ''}`; });
+            status.textContent = bad ? `Done, ${bad} couldn't be downloaded — try again later.` : 'All instruments are available offline.';
+            btn.disabled = false;
+          } }, 'Download All Instruments for Offline Use');
+          return h('div', { class: 'set-foot' }, btn, status);
+        })()),
       this.section('Bounce (File › Bounce)',
         this.row('Sample rate', this.select(a.bounceRate, [[44100, '44.1 kHz'], [48000, '48 kHz'], [88200, '88.2 kHz'], [96000, '96 kHz']], v => saveAudioPrefs({ bounceRate: v }), 'Bounce sample rate')),
         this.row('Bit depth', this.select(a.bounceBits, [[16, '16-bit'], [24, '24-bit'], [32, '32-bit float']], v => saveAudioPrefs({ bounceBits: v }), 'Bounce bit depth')),

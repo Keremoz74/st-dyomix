@@ -3,7 +3,8 @@ import { Insert } from '../model';
 import { Commands } from '../commands';
 import { PLUGINS, ParamDef, fmtParam, toNorm, fromNorm, defaultParams } from '../audio/plugins';
 import { pluginPrefs } from '../plugin-prefs';
-import { instrumentMenu } from './pluginmenu';
+import { instrumentMenu, gmLibraryMenu } from './pluginmenu';
+import { bankReady, bankFailed, gmName, onBankState } from '../audio/gm';
 import { nativeParams, hostingAvailable } from '../audio/native';
 import { toast, inlineEdit } from './dom';
 import { INSTRUMENTS } from '../audio/instruments';
@@ -92,6 +93,7 @@ export class PluginWindow {
   private pos: { x: number; y: number } | null = null;
 
   constructor(private cmd: Commands) {
+    onBankState(() => this.libStatus?.());
     cmd.store.on(k => {
       if (!this.el) return;
       if (k === 'fx' || k === 'mix') this.knobs.forEach(kn => kn.show());
@@ -121,7 +123,7 @@ export class PluginWindow {
     this.render();
   }
 
-  close() { this.nativeStatus = null; this.dropWamGui(); this.el?.remove(); this.el = null; this.canvas = null; this.grFill = null; }
+  close() { this.nativeStatus = null; this.libStatus = null; this.dropWamGui(); this.el?.remove(); this.el = null; this.canvas = null; this.grFill = null; }
 
   private wamGui: { el: Element; inst: any } | null = null;
   private shownKey = '';
@@ -255,6 +257,7 @@ export class PluginWindow {
     });
   }
   private nativeStatus: (() => void) | null = null;
+  private libStatus: (() => void) | null = null;
 
   private presetLabel(ins: Insert) {
     const def = PLUGINS[ins.type];
@@ -267,10 +270,14 @@ export class PluginWindow {
   private renderInstrument(ins: Insert) {
     const { store } = this.cmd;
     const t = store.track(this.owner)!, inst = t.instrument!, def = INSTRUMENTS[inst.type];
-    this.knobs = def.params.map(p => p.options ? choice(this.cmd, this.owner, ins, p) : knob(this.cmd, this.owner, ins, p));
+    const gm = inst.type === 'gm';
+    this.knobs = def.params.filter(p => !(gm && p.id === 'program')).map(p => p.options ? choice(this.cmd, this.owner, ins, p) : knob(this.cmd, this.owner, ins, p));
     this.canvas = null; this.grFill = null; this.grText = null;
-    const presetBtn: HTMLButtonElement = h('button', { class: 'pw-btn pw-preset', 'aria-haspopup': 'menu', title: 'Presets',
-      onClick: () => openMenu(presetBtn, Object.keys(def.presets).map(n => [n, '', () => this.cmd.setPreset(t.id, n), n === inst.preset] as MenuItem)) }, inst.preset, icon('chevron', 10));
+    const presetBtn: HTMLButtonElement = gm
+      ? h('button', { class: 'pw-btn pw-preset pw-lib', 'aria-haspopup': 'menu', title: 'Choose an instrument from the Sound Library',
+          onClick: () => openMenu(presetBtn, gmLibraryMenu(p => this.cmd.setGmProgram(t.id, p), Math.round(inst.params.program))) }, gmName(inst.params.program), icon('chevron', 10))
+      : h('button', { class: 'pw-btn pw-preset', 'aria-haspopup': 'menu', title: 'Presets',
+          onClick: () => openMenu(presetBtn, Object.keys(def.presets).map(n => [n, '', () => this.cmd.setPreset(t.id, n), n === inst.preset] as MenuItem)) }, inst.preset, icon('chevron', 10));
     const head = h('div', { class: 'pw-head' },
       h('span', { class: 'pw-dot', style: { background: t.color } }),
       h('span', { class: 'pw-title' }, `${t.name} · ${def.name}`),
@@ -278,11 +285,21 @@ export class PluginWindow {
       (() => { const b: HTMLButtonElement = h('button', { class: 'pw-btn pw-preset', 'aria-haspopup': 'menu', title: 'Change instrument', onClick: () => openMenu(b, instrumentMenu(this.cmd, t.id)) }, 'Instrument', icon('chevron', 10)); return b; })(),
       h('button', { class: 'pw-btn', title: 'Musical Typing (⌘K)', 'aria-label': 'Show Musical Typing', onClick: () => { if (!store.ui.showKeyboard) this.cmd.toggleKeyboard(); } }, icon('piano', 14)),
       h('button', { class: 'pw-btn', title: 'Close', 'aria-label': 'Close instrument window', onClick: () => this.close() }, '×'));
+    const libStatus = gm ? h('div', { class: 'pw-libstatus' }) : null;
+    const showLib = () => {
+      if (!libStatus) return;
+      const p = inst.params.program;
+      libStatus.textContent = bankReady(p) ? `🎹 ${gmName(p)} — sampled (FluidR3 GM)` : bankFailed(p)
+        ? `⚠ Couldn't download ${gmName(p)} (internet needed once; it is kept for offline use afterwards). A synth stands in for now.`
+        : `⟳ Loading ${gmName(p)} samples…`;
+      libStatus.classList.toggle('warn', bankFailed(p));
+    };
+    showLib(); this.libStatus = showLib;
     const sampleBar = inst.type === 'sampler' ? h('div', { class: 'pw-sample' },
       h('span', { class: 'pw-sample-name' }, inst.sampleName ? `Sample: ${inst.sampleName}` : 'No sample loaded. Load one or drop an audio file here.'),
       h('button', { class: 'pw-btn', onClick: () => this.cmd.pickSample(t.id) }, 'Load Sample…')) : null;
     const win = h('div', { class: 'plugin-win inst-win', role: 'dialog', 'aria-label': `${def.name} on ${t.name}` },
-      head, sampleBar, h('div', { class: 'pw-knobs' }, this.knobs.map(k => (k as any).el)));
+      head, libStatus, sampleBar, h('div', { class: 'pw-knobs' }, this.knobs.map(k => (k as any).el)));
     if (inst.type === 'sampler') {
       win.addEventListener('dragover', e => { e.preventDefault(); win.classList.add('drop'); });
       win.addEventListener('dragleave', () => win.classList.remove('drop'));

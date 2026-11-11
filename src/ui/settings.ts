@@ -102,7 +102,7 @@ export class SettingsWindow {
         this.row('Sound', this.select(g.clickSound, [['beep', 'Beep'], ['wood', 'Woodblock'], ['hihat', 'Hi-Hat']], v => s({ clickSound: v }), 'Metronome sound')),
         this.row('Level', this.number(g.clickLevel, 0, 100, 5, v => s({ clickLevel: v }), 'Metronome level', '%'))),
       h('div', { class: 'set-foot' }, h('button', { class: 'tool-btn', onClick: () => { saveGeneralPrefs({ ...GENERAL_DEFAULTS }); this.render(); } }, 'Reset General Settings'),
-        h('span', { class: 'grow' }), h('span', { class: 'set-hint' }, `Ozmix Studio ${APP_VERSION}`)));
+        h('span', { class: 'grow' }), h('img', { class: 'set-logo', alt: '', src: (document.querySelector('link[rel=icon]') as HTMLLinkElement | null)?.href ?? '' }), h('span', { class: 'set-hint' }, `Ozmix Studio ${APP_VERSION}`)));
   }
 
   private async audio() {

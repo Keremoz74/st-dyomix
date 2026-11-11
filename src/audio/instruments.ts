@@ -221,7 +221,10 @@ const GM_SAFE: InstDef = {
       if (Math.round(p.program) === GM_DRUMS) return DRUMS.play(ctx, dest, DRUMS.presets['Studio Kit'], pitch, vel, when, dur);
       return SYNTH.play(ctx, dest, SYNTH.presets['Electric Piano'], pitch, vel, when, dur);
     }
-    return GM_INST.play(ctx, dest, p, pitch, vel, when, dur);
+    const v = GM_INST.play(ctx, dest, p, pitch, vel, when, dur);
+    // drum notes the acoustic kit doesn't have (cowbell, claves…) come from the electronic kit
+    if (!v.src.length && Math.round(p.program) === GM_DRUMS) return DRUMS.play(ctx, dest, DRUMS.presets['Studio Kit'], pitch, vel, when, dur);
+    return v;
   },
 };
 export const INSTRUMENTS: Record<InstType, InstDef> = { gm: GM_SAFE, synth: SYNTH, drums: DRUMS, sampler: SAMPLER, epiano: EPIANO, organ: ORGAN, wam: WAM_INST };

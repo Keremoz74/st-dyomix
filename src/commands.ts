@@ -596,12 +596,12 @@ export class Commands {
   newTrack = () => { this.edit(() => this.store.addTrack()); };
   newInstrumentTrack = (type: InstType = 'synth', preset?: string) => {
     const inst = newInstrument(type, preset);
-    this.edit(() => { const t = this.store.addTrack(type === 'drums' ? 'Electronic Drums' : type === 'sampler' ? 'Sampler' : type === 'epiano' ? 'E-Piano' : type === 'organ' ? 'Organ' : type === 'gm' ? gmName(inst.params.program).replace(' (GM)', '') : inst.preset, true, 'inst', inst); t.armed = false; });
+    this.edit(() => { const t = this.store.addTrack(type === 'drums' ? 'Electronic Drums' : type === 'sampler' ? 'Sampler' : type === 'epiano' ? 'E-Piano' : type === 'organ' ? 'Organ' : type === 'gm' ? gmName(inst.params.program).replace(' (Acoustic)', '') : inst.preset, true, 'inst', inst); t.armed = false; });
   };
   newTrackMenu = (): [string, string, () => void][] => [
     ['New Audio Track', '⌥⌘A', this.newTrack],
     ['New Software Instrument Track (Grand Piano)', '⌥⌘S', () => this.newInstrumentTrack('gm')],
-    ['New Drum Kit Track', '', () => this.newInstrumentTrack('gm', 'Drum Kit (GM)')],
+    ['New Drum Kit Track', '', () => this.newInstrumentTrack('gm', 'Drum Kit (Acoustic)')],
     ['New Electronic Drum Kit Track', '', () => this.newInstrumentTrack('drums')],
     ['New Synth Track', '', () => this.newInstrumentTrack('synth')],
     ['New Sampler Track', '', () => this.newInstrumentTrack('sampler')],
@@ -615,7 +615,7 @@ export class Commands {
   /** Logic-style Session Player: a track plus a generated region covering the song. */
   newSessionTrack = (type: SessionType) => {
     const bpb = this.store.beatsPerBar;
-    const inst = newInstrument('gm', type === 'drums' ? 'Drum Kit (GM)' : type === 'bass' ? 'Finger Bass' : 'Electric Piano (Rhodes)');
+    const inst = newInstrument('gm', type === 'drums' ? 'Drum Kit (Acoustic)' : type === 'bass' ? 'Finger Bass' : 'Electric Piano (Rhodes)');
     const name = type === 'drums' ? 'Drummer' : type === 'bass' ? 'Session Bass' : 'Session Keys';
     const length = Math.max(8 * bpb, Math.ceil(this.store.songEndBeats() / bpb) * bpb);
     let region: Region | null = null;
@@ -664,7 +664,7 @@ export class Commands {
   };
   newPatternTrack = () => {
     let id = '';
-    this.edit(() => { const t = this.store.addTrack('Step Sequencer', true, 'inst', newInstrument('gm', 'Drum Kit (GM)')); t.armed = false; id = t.id; });
+    this.edit(() => { const t = this.store.addTrack('Step Sequencer', true, 'inst', newInstrument('gm', 'Drum Kit (Acoustic)')); t.armed = false; id = t.id; });
     const bpb = this.store.beatsPerBar;
     this.createPatternRegion(id, Math.floor(this.ui.playhead / bpb) * bpb);
   };

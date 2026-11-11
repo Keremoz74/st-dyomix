@@ -8,7 +8,7 @@ const CORE = [
   'acoustic_grand_piano', 'electric_piano_1', 'drawbar_organ',
   'acoustic_guitar_nylon', 'acoustic_guitar_steel', 'electric_guitar_clean', 'distortion_guitar',
   'electric_bass_finger', 'violin', 'string_ensemble_1', 'choir_aahs',
-  'trumpet', 'alto_sax', 'flute', 'pad_2_warm', 'percussion',
+  'trumpet', 'alto_sax', 'flute', 'pad_2_warm',
 ];
 // The GM set has no drum kit in every font: try these folders for 'percussion'.
 const DRUM_FONTS = ['FluidR3_GM', 'MusyngKite', 'FatBoy'];

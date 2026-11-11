@@ -19,7 +19,7 @@ tsc -p .             # type-check
 - `src/ui/pianoroll.ts`: Piano Roll editor
 - `src/audio/plugins2.ts` + `src/audio/worklets.ts`: more Audio FX — Noise Gate, DeEsser, Multipressor, Phaser, Flanger, Ring Modulator, Amp Designer, Bitcrusher, Exciter, Space Designer (convolution), Stereo Delay, Graphic EQ, Stereo Spread, Gain — with factory presets
 - `src/audio/plugins3.ts`: Tape Delay, Vintage EQ, Pitch Shifter, Envelope Filter, Transient Designer, Tape Saturator, Fuzz, Wah, Analyzer
-- `src/audio/gm.ts`: Sound Library — 128 sampled General MIDI instruments + drum kit (FluidR3 GM by Frank Wen, MIT / CC-BY 3.0, via midi-js-soundfonts); cached offline, core set bundled in the apps by `scripts/fetch-sounds.mjs`
+- `src/audio/gm.ts`: Sound Library — 128 sampled General MIDI instruments + drum kit (FluidR3 GM by Frank Wen, MIT / CC-BY 3.0, via midi-js-soundfonts) and an acoustic drum kit (“Pearl Master Studio Pack 1” by enoe, CC BY 3.0, via oramics/sampled, built in); cached offline, core set bundled in the apps by `scripts/fetch-sounds.mjs`
 - `src/audio/keys.ts`: Electric Piano (FM) and Drawbar Organ instruments
 - `src/audio/wam.ts` + `src/ui/pluginbrowser.ts`: Web Audio Modules 2.0 host (effects + instruments, community catalog, add by URL, state saved with the project)
 - `src/audio/native.ts` + `src/audio/freeze.ts` + `src-tauri/src/native.rs`: native VST3/AU plug-ins in the desktop app (scan; offline rendering as an auto-updating freeze)

@@ -8,6 +8,7 @@
 //   3. the internet (GitHub Pages, then the jsDelivr CDN).
 import type { InstDef, Voice } from './instruments';
 import type { ParamDef } from './plugins';
+import { PEARL_KIT } from './drumkit-data';
 
 export const GM_FONT = 'FluidR3_GM';
 const SOURCES = [
@@ -51,9 +52,17 @@ export const GM: [string, string][] = [
   ['taiko_drum', 'Taiko Drum'], ['melodic_tom', 'Melodic Tom'], ['synth_drum', 'Synth Drum'], ['reverse_cymbal', 'Reverse Cymbal'],
   ['guitar_fret_noise', 'Guitar Fret Noise'], ['breath_noise', 'Breath Noise'], ['seashore', 'Seashore'], ['bird_tweet', 'Bird Tweet'],
   ['telephone_ring', 'Telephone'], ['helicopter', 'Helicopter'], ['applause', 'Applause'], ['gunshot', 'Gunshot'],
-  ['percussion', 'Drum Kit (GM)'],
+  ['percussion', 'Drum Kit (Acoustic)'],
 ];
 export const GM_DRUMS = 128;
+const DRUM_GAIN: Record<number, number> = { 37: 0.45, 39: 0.6, 44: 0.45, 53: 0.7, 35: 0.85 };
+/** General MIDI drum notes → samples of the acoustic kit. */
+const GM_DRUM_MAP: Record<number, string> = {
+  35: 'kick-01', 36: 'kick-01', 37: 'snare-03', 38: 'snare-01', 39: 'snare-03', 40: 'snare-02',
+  41: 'tom-03', 43: 'tom-03', 45: 'tom-02', 47: 'tom-02', 48: 'tom-01', 50: 'tom-01',
+  42: 'hihat-closed', 44: 'hihat-closed', 46: 'hihat-open',
+  49: 'crash-01', 57: 'crash-02', 52: 'splash-02', 55: 'splash-01', 51: 'ride-01', 59: 'ride-02', 53: 'ride-02',
+};
 export const GM_CATEGORIES = ['Piano', 'Chromatic Percussion', 'Organ', 'Guitar', 'Bass', 'Strings', 'Ensemble', 'Brass', 'Reed', 'Pipe', 'Synth Lead', 'Synth Pad', 'Synth Effects', 'World', 'Percussive', 'Sound Effects'];
 export const gmName = (prog: number) => GM[Math.max(0, Math.min(GM.length - 1, Math.round(prog)))][1];
 
@@ -112,6 +121,15 @@ export function loadBank(prog: number): Promise<Bank> {
   if (!p) {
     listeners.forEach(f => f(id, 'loading'));
     p = (async () => {
+      if (id === 'percussion') {
+        // built in: a real acoustic kit mapped to the General MIDI drum notes
+        const bank: Bank = new Map();
+        const bufs = new Map<string, AudioBuffer>();
+        await Promise.all(Object.entries(PEARL_KIT).map(async ([n, data]) => { bufs.set(n, await decodeCtx!.decodeAudioData(b64(data))); }));
+        for (const [note, name] of Object.entries(GM_DRUM_MAP)) { const b = bufs.get(name); if (b) bank.set(+note, b); }
+        ready.set(id, bank); listeners.forEach(f => f(id, 'ready'));
+        return bank;
+      }
       const text = await fetchText(`${id}-mp3.js`);
       const bank: Bank = new Map();
       const re = /"([A-G][b#]?-?\d)"\s*:\s*"data:audio\/[a-z0-9]+;base64,([A-Za-z0-9+/=]+)"/g;
@@ -169,7 +187,7 @@ export const GM_INST: InstDef = {
     const src = ctx.createBufferSource(); src.buffer = buf; src.playbackRate.value = Math.pow(2, (want - best) / 12);
     const env = ctx.createGain(), tone = ctx.createBiquadFilter();
     tone.type = 'lowpass'; tone.frequency.value = Math.min(20000, p.tone * (0.5 + 0.5 * vel / 127)); tone.Q.value = 0.3;
-    const sens = p.velSens / 100, lvl = Math.pow(10, p.level / 20) * 0.9 * ((1 - sens) + sens * Math.pow(vel / 127, 1.5));
+    const sens = p.velSens / 100, lvl = Math.pow(10, p.level / 20) * 0.9 * ((1 - sens) + sens * Math.pow(vel / 127, 1.5)) * (drums ? (DRUM_GAIN[pitch] ?? 1) : 1);
     const A = Math.max(0.001, p.attack / 1000), R = Math.max(0.02, p.release / 1000);
     env.gain.setValueAtTime(0, when); env.gain.linearRampToValueAtTime(lvl, when + A);
     src.connect(tone); tone.connect(env); env.connect(dest);

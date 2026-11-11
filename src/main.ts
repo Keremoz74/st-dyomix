@@ -1,6 +1,6 @@
 import { Store } from './model';
 import { Engine } from './audio/engine';
-import { loadDemo } from './audio/demo';
+import { loadDemo, isOldDemo } from './audio/demo';
 import { Commands, loadPrefs } from './commands';
 import { h, toast, closeMenus } from './ui/dom';
 import { TracksArea } from './ui/tracks';
@@ -167,6 +167,12 @@ autosave.onSaved = () => { tracks.setSaved(autosave.lastSaved); cmd.refreshRecen
   const recent = await autosave.recent();
   cmd.recentList = recent;
   if (recent.length && await autosave.load(recent[0].id)) {
+    if (isOldDemo(store)) {
+      await loadDemo(store);
+      store.emit('structure'); store.emit('view'); requestAnimationFrame(loop);
+      toast('Demo song updated: now played by real instruments (drums, bass, piano, Rhodes, strings, sax).');
+      return;
+    }
     store.emit('structure'); store.emit('view'); store.emit('transport');
     requestAnimationFrame(loop);
     toast(`Welcome back: "${store.project.name}" reopened. File › Open Recent for others.`);

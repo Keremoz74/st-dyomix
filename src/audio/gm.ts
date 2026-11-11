@@ -82,9 +82,12 @@ const noteToMidi = (n: string) => {
   return (+m[3] + 1) * 12 + PCS[m[1]] + (m[2] === 'b' ? -1 : m[2] === '#' ? 1 : 0);
 };
 
+/** Where each instrument's samples came from (or why they failed), for Settings › Sound Library › Test. */
+export const bankInfo = new Map<string, string>();
+
 async function fetchText(file: string): Promise<string> {
   let cache: Cache | null = null;
-  try { cache = await caches.open(CACHE); const hit = await cache.match(SOURCES[1] + file); if (hit) return await hit.text(); } catch { cache = null; }
+  try { cache = await caches.open(CACHE); const hit = await cache.match(SOURCES[1] + file); if (hit) { bankInfo.set(file, 'device cache'); return await hit.text(); } } catch { cache = null; }
   let lastErr: unknown = null;
   // the drum kit isn't in every font: also look in the other midi-js-soundfonts sets
   const sources = file.startsWith('percussion') ? [...SOURCES, ...['MusyngKite', 'FatBoy'].flatMap(f => SOURCES.slice(1).map(s => s.replace(GM_FONT, f)))] : SOURCES;
@@ -96,9 +99,11 @@ async function fetchText(file: string): Promise<string> {
       const text = await res.text();
       if (!text.includes('data:audio')) { lastErr = new Error('not a soundfont file'); continue; }
       if (cache && base !== SOURCES[0]) cache.put(SOURCES[1] + file, new Response(text, { headers: { 'Content-Type': 'text/javascript' } })).catch(() => {});
+      bankInfo.set(file, base.startsWith('./') ? 'built into the app' : `internet (${new URL(base).host})`);
       return text;
     } catch (e) { lastErr = e; }
   }
+  bankInfo.set(file, `failed: ${(lastErr as Error)?.message ?? lastErr}`);
   throw lastErr ?? new Error('unavailable');
 }
 
@@ -140,7 +145,7 @@ export function loadBank(prog: number): Promise<Bank> {
         jobs.push(decodeCtx!.decodeAudioData(b64(data)).then(buf => { bank.set(midi, buf); }).catch(() => {}));
       }
       await Promise.all(jobs);
-      if (!bank.size) throw new Error('no samples');
+      if (!bank.size) { bankInfo.set(`${id}-mp3.js`, 'failed: the samples could not be decoded'); throw new Error('no samples'); }
       ready.set(id, bank);
       listeners.forEach(f => f(id, 'ready'));
       return bank;

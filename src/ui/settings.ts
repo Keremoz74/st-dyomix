@@ -7,7 +7,7 @@ import { PLUGIN_LIST, CATEGORIES } from '../audio/plugins';
 import { pluginPrefs } from '../plugin-prefs';
 import { wamSettings, DEFAULT_SDK, DEFAULT_CATALOG, fetchCatalog } from '../audio/wam';
 import { KEY_NAMES } from '../notation';
-import { cacheAllInstruments, GM } from '../audio/gm';
+import { cacheAllInstruments, GM, loadBank, bankInfo } from '../audio/gm';
 import { inDesktopApp, hostingAvailable } from '../audio/native';
 import { refreshNativeList } from './pluginmenu';
 import { h, toast } from './dom';
@@ -132,7 +132,17 @@ export class SettingsWindow {
             status.textContent = bad ? `Done, ${bad} couldn't be downloaded — try again later.` : 'All instruments are available offline.';
             btn.disabled = false;
           } }, 'Download All Instruments for Offline Use');
-          return h('div', { class: 'set-foot' }, btn, status);
+          const tStatus = h('span', { class: 'set-hint' });
+          const test: HTMLButtonElement = h('button', { class: 'tool-btn', onClick: async () => {
+            test.disabled = true; tStatus.textContent = 'Testing Grand Piano and the drum kit…';
+            const t0 = performance.now();
+            const r = await Promise.all([0, 128, 33].map(p => loadBank(p).then(b => `${GM[p][1]}: ${b.size} samples, ${bankInfo.get(`${GM[p][0]}-mp3.js`) ?? 'built in'}`).catch(e => `${GM[p][1]}: ${bankInfo.get(`${GM[p][0]}-mp3.js`) ?? (e as Error).message}`)));
+            tStatus.textContent = `${r.join(' · ')} (${Math.round(performance.now() - t0)} ms)`;
+            const sm = this.cmd.engine; const tr = this.cmd.store.project.tracks.find(x => x.instrument?.type === 'gm');
+            if (tr) sm.audition(tr.id, 60, 100);
+            test.disabled = false;
+          } }, 'Test Sounds');
+          return h('div', {}, h('div', { class: 'set-foot' }, btn, status), h('div', { class: 'set-foot' }, test, tStatus));
         })()),
       this.section('Bounce (File › Bounce)',
         this.row('Sample rate', this.select(a.bounceRate, [[44100, '44.1 kHz'], [48000, '48 kHz'], [88200, '88.2 kHz'], [96000, '96 kHz']], v => saveAudioPrefs({ bounceRate: v }), 'Bounce sample rate')),

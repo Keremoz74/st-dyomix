@@ -94,6 +94,7 @@ export interface Project {
   tempoEvents: TempoEvent[];
   markers: Marker[];
   key?: number; // key signature in fifths (-6..6), for the Score
+  demoVersion?: number; // set on the built-in demo song
   movie?: MovieInfo; // video synced to the timeline (the file itself lives in Store.movieBlob)
 }
 

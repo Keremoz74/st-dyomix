@@ -117,6 +117,12 @@ export async function cacheAllInstruments(progress: (done: number, total: number
   return bad;
 }
 
+/** Decodes with the app's context; if that fails (some Android WebViews), retries on a fresh offline context. */
+async function decode(data: ArrayBuffer): Promise<AudioBuffer> {
+  const copy = data.slice(0);
+  try { return await decodeCtx!.decodeAudioData(data); }
+  catch { return await new OfflineAudioContext(1, 1, 44100).decodeAudioData(copy); }
+}
 const b64 = (s: string) => { const bin = atob(s); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u.buffer; };
 
 /** Loads (once) every sample of an instrument. */
@@ -130,7 +136,7 @@ export function loadBank(prog: number): Promise<Bank> {
         // built in: a real acoustic kit mapped to the General MIDI drum notes
         const bank: Bank = new Map();
         const bufs = new Map<string, AudioBuffer>();
-        await Promise.all(Object.entries(PEARL_KIT).map(async ([n, data]) => { bufs.set(n, await decodeCtx!.decodeAudioData(b64(data))); }));
+        await Promise.all(Object.entries(PEARL_KIT).map(async ([n, data]) => { bufs.set(n, await decode(b64(data))); }));
         for (const [note, name] of Object.entries(GM_DRUM_MAP)) { const b = bufs.get(name); if (b) bank.set(+note, b); }
         ready.set(id, bank); listeners.forEach(f => f(id, 'ready'));
         return bank;
@@ -142,7 +148,7 @@ export function loadBank(prog: number): Promise<Bank> {
       for (let m; (m = re.exec(text)); ) {
         const midi = noteToMidi(m[1]), data = m[2];
         if (midi < 0) continue;
-        jobs.push(decodeCtx!.decodeAudioData(b64(data)).then(buf => { bank.set(midi, buf); }).catch(() => {}));
+        jobs.push(decode(b64(data)).then(buf => { bank.set(midi, buf); }).catch(() => {}));
       }
       await Promise.all(jobs);
       if (!bank.size) { bankInfo.set(`${id}-mp3.js`, 'failed: the samples could not be decoded'); throw new Error('no samples'); }
@@ -160,6 +166,16 @@ const failed = new Set<string>();
 onBankState((id, s) => { if (s === 'error') failed.add(id); else failed.delete(id); });
 /** True when an instrument's samples couldn't be loaded (offline and not cached). */
 export const bankFailed = (prog: number) => failed.has(GM[Math.round(prog)]?.[0] ?? '');
+
+/** Instruments bundled with the app (see scripts/fetch-sounds.mjs). */
+export const BUNDLED = [0, 4, 16, 24, 25, 27, 30, 33, 40, 48, 52, 56, 65, 73, 89];
+/** A bundled stand-in from the same family, for when an instrument can't be loaded. */
+export function standIn(prog: number): number {
+  const p = Math.round(prog), fam = Math.floor(p / 8);
+  const byFam = [0, 4, 16, 25, 33, 40, 48, 56, 65, 73, 89, 89, 89, 24, 0, 89];
+  if (BUNDLED.includes(p)) return fam === 5 ? 48 : 0;
+  return byFam[fam] ?? 0;
+}
 
 // ---------- instrument ----------
 const GM_PARAMS: ParamDef[] = [

@@ -4,7 +4,7 @@ import { Commands } from '../commands';
 import { PLUGINS, ParamDef, fmtParam, toNorm, fromNorm, defaultParams } from '../audio/plugins';
 import { pluginPrefs } from '../plugin-prefs';
 import { instrumentMenu, gmLibraryMenu } from './pluginmenu';
-import { bankReady, bankFailed, gmName, onBankState } from '../audio/gm';
+import { bankReady, bankFailed, gmName, onBankState, standIn } from '../audio/gm';
 import { nativeParams, hostingAvailable } from '../audio/native';
 import { toast, inlineEdit } from './dom';
 import { INSTRUMENTS } from '../audio/instruments';
@@ -290,7 +290,7 @@ export class PluginWindow {
       if (!libStatus) return;
       const p = inst.params.program;
       libStatus.textContent = bankReady(p) ? `🎹 ${gmName(p)} — sampled (FluidR3 GM)` : bankFailed(p)
-        ? `⚠ Couldn't download ${gmName(p)} (internet needed once; it is kept for offline use afterwards). A synth stands in for now.`
+        ? `⚠ Couldn't download ${gmName(p)} (internet needed once; it is kept for offline use afterwards). ${gmName(standIn(p))} stands in for now.`
         : `⟳ Loading ${gmName(p)} samples…`;
       libStatus.classList.toggle('warn', bankFailed(p));
     };

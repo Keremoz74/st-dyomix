@@ -5,7 +5,7 @@ import { ParamDef } from './plugins';
 import { playWamNote, WamRef } from './wam';
 
 import { EPIANO, ORGAN } from './keys';
-import { GM_INST, GM_DRUMS, bankFailed } from './gm';
+import { GM_INST, GM_DRUMS, bankFailed, standIn } from './gm';
 
 export type InstType = 'gm' | 'synth' | 'drums' | 'sampler' | 'epiano' | 'organ' | 'wam';
 
@@ -219,6 +219,9 @@ const GM_SAFE: InstDef = {
   play(ctx, dest, p, pitch, vel, when, dur) {
     if (bankFailed(p.program)) {
       if (Math.round(p.program) === GM_DRUMS) return DRUMS.play(ctx, dest, DRUMS.presets['Studio Kit'], pitch, vel, when, dur);
+      // a real (sampled) instrument from the same family stands in; the synth only if that fails too
+      const alt = standIn(p.program);
+      if (!bankFailed(alt)) return GM_INST.play(ctx, dest, { ...p, program: alt }, pitch, vel, when, dur);
       return SYNTH.play(ctx, dest, SYNTH.presets['Electric Piano'], pitch, vel, when, dur);
     }
     const v = GM_INST.play(ctx, dest, p, pitch, vel, when, dur);

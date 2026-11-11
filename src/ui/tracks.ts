@@ -51,6 +51,7 @@ export class TracksArea {
   private drag: Drag | null = null;
   private dirty = true;
   private playLine!: PlayLine;
+  private seenLocate = 0;
   private hoverCursor = '';
   private volInputs = new Map<string, HTMLInputElement>();
   private projName!: HTMLInputElement;
@@ -861,7 +862,9 @@ export class TracksArea {
   markDirty() { this.dirty = true; }
 
   frame(playheadBeat: number, playing: boolean) {
-    if (playing && generalPrefs().followPlayhead) {
+    const seq = this.cmd.store.ui.locateSeq ?? 0, jumped = seq !== this.seenLocate;
+    this.seenLocate = seq;
+    if (jumped || (playing && generalPrefs().followPlayhead)) {
       const x = playheadBeat * this.ppb, w = this.scroller.clientWidth;
       if (x > this.scroller.scrollLeft + w - 20 || x < this.scroller.scrollLeft) { this.scroller.scrollLeft = Math.max(0, x - 40); this.dirty = true; }
     }

@@ -99,6 +99,7 @@ export class Commands {
   forward = () => { const b = this.store.beatsPerBar; this.locate((Math.floor(this.engine.currentBeat() / b + 0.05) + 1) * b); };
   locate = (beat: number) => {
     this.ui.playhead = Math.max(0, beat);
+    this.ui.locateSeq = (this.ui.locateSeq ?? 0) + 1;
     if (this.engine.playing) this.engine.play(this.ui.playhead); else { this.engine.automate(this.ui.playhead); this.store.emit('transport'); }
   };
   togglePunch = () => {

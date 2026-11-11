@@ -376,11 +376,13 @@ export class PianoRoll {
   }
 
   private playLine?: PlayLine;
+  private seenLocate = 0;
   frame(playhead: number) {
     if (this.el.hidden) return;
     const sto = this.cmd.store, W0 = this.scroller.clientWidth;
     let px = this.KW + playhead * this.ppb - this.scroller.scrollLeft;
-    if (sto.ui.playing && this.region && (px > W0 - 20 || px < this.KW)) { this.scroller.scrollLeft = Math.max(0, playhead * this.ppb - 40); px = this.KW + playhead * this.ppb - this.scroller.scrollLeft; this.dirty = true; }
+    const jumped = (sto.ui.locateSeq ?? 0) !== this.seenLocate; this.seenLocate = sto.ui.locateSeq ?? 0;
+    if ((sto.ui.playing || jumped) && this.region && (px > W0 - 20 || px < this.KW)) { this.scroller.scrollLeft = Math.max(0, playhead * this.ppb - 40); px = this.KW + playhead * this.ppb - this.scroller.scrollLeft; this.dirty = true; }
     this.playLine ??= new PlayLine(this.canvas.parentElement!);
     this.playLine.set(this.region && px >= this.KW && px <= W0 ? px : null, sto.ui.recording);
     if (!this.dirty && !this.drag) return;

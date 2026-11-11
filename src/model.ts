@@ -115,6 +115,7 @@ export const TOOLS: { id: ToolId; label: string; key: string }[] = [
 
 export interface UIState {
   playhead: number; // beats
+  locateSeq?: number; // bumped by jumps (Go to Beginning, markers…): editors scroll the playhead into view
   playing: boolean;
   recording: boolean;
   cycle: { on: boolean; start: number; end: number };

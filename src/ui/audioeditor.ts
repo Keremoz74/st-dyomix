@@ -311,11 +311,13 @@ export class AudioEditor {
   }
 
   private playLine?: PlayLine;
+  private seenLocate = 0;
   frame(playhead: number) {
     if (this.el.hidden) return;
     const st = this.cmd.store, takes = !!this.region && isFolder(this.region), W0 = this.scroller.clientWidth;
     let px = playhead * this.ppb - this.scroller.scrollLeft;
-    if (!takes && st.ui.playing && this.region && (px > W0 - 20 || px < 0)) { this.scroller.scrollLeft = Math.max(0, playhead * this.ppb - 40); px = playhead * this.ppb - this.scroller.scrollLeft; this.dirty = true; }
+    const jumped = (st.ui.locateSeq ?? 0) !== this.seenLocate; this.seenLocate = st.ui.locateSeq ?? 0;
+    if (!takes && (st.ui.playing || jumped) && this.region && (px > W0 - 20 || px < 0)) { this.scroller.scrollLeft = Math.max(0, playhead * this.ppb - 40); px = playhead * this.ppb - this.scroller.scrollLeft; this.dirty = true; }
     this.playLine ??= new PlayLine(this.canvas.parentElement!);
     this.playLine.set(!takes && this.region && px >= 0 && px <= W0 ? px : null, st.ui.recording);
     if (!this.dirty && !this.drag && !(takes && st.ui.playing)) return;

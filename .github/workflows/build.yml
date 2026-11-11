@@ -142,7 +142,8 @@ jobs:
           node scripts/android-setup.mjs
           npx tauri icon app-icon.png
       - name: Build APK + AAB
-        run: npx tauri android build --apk --aab --ci
+        # arm64 only: the web assets (incl. sounds) are embedded in each ABI's library, so a universal APK is 4× larger
+        run: npx tauri android build --apk --aab --ci --target aarch64
       - name: Sign (when a keystore is configured)
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}

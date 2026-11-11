@@ -49,6 +49,7 @@ const mixer = new Mixer(cmd);
 const toolMenu = new ToolMenu(cmd);
 const pluginWin = new PluginWindow(cmd);
 cmd.openPlugin = (owner, id) => pluginWin.open(owner, id);
+cmd.togglePlugin = (owner, id) => pluginWin.isShowing(owner, id) ? pluginWin.close() : pluginWin.open(owner, id);
 const pianoRoll = new PianoRoll(cmd);
 const audioEd = new AudioEditor(cmd);
 const sessionEd = new SessionEditor(cmd);

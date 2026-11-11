@@ -148,7 +148,7 @@ export class TracksArea {
     this.modeBtn = h('button', { class: 'sel-btn', title: 'Edit mode (Pro Tools): Shuffle, Slip or Grid', onClick: () => openMenu(this.modeBtn, modes.map(([m, l, k]) => [l, k, () => cmd.setEditMode(m), (store.ui.editMode ?? 'grid') === m] as MenuItem)) });
     this.snapBtn = h('button', { class: 'sel-btn', onClick: () => openMenu(this.snapBtn, snaps.map(([m, l]) => [l, '', () => { store.ui.snap = m; store.emit('view'); }, store.ui.snap === m] as MenuItem)) });
 
-    this.autoBtn = h('button', { class: 'tool-btn', title: 'Show/hide automation (A)', 'aria-pressed': 'false', onClick: cmd.toggleAutomation }, 'Automation');
+    this.autoBtn = h('button', { class: 'tool-btn', title: 'Show/hide automation (A)', 'aria-pressed': 'false', onClick: cmd.toggleAutomation }, h('span', { class: 'long' }, 'Automation'), h('span', { class: 'short' }, 'Auto'));
     const toolbar = h('div', { class: 'lm-bar' },
       this.projName, this.savedEl, fileMenu, editMenu, fnMenu, viewMenu,
       h('span', { class: 'grow' }),
@@ -324,7 +324,7 @@ export class TracksArea {
     this.modeBtn.replaceChildren(h('span', {}, em === 'slip' ? 'Slip' : em === 'shuffle' ? 'Shuffle' : 'Grid'), icon('chevron', 10));
     this.modeBtn.classList.toggle('on', em === 'shuffle');
     const lab = (id: ToolId) => TOOLS.find(t => t.id === id)!.label;
-    this.toolBtn.replaceChildren(icon(ui.tool, 16), h('span', {}, lab(ui.tool)), icon('chevron', 10));
+    this.toolBtn.replaceChildren(icon(ui.tool, 16), h('span', { class: 'tb-label' }, lab(ui.tool)), icon('chevron', 10));
     this.toolBtn.setAttribute('aria-label', `Left-click tool: ${lab(ui.tool)}`);
     this.cmdToolBtn.replaceChildren(h('span', { class: 'cmd-mark' }, '⌘'), icon(ui.cmdTool, 16), icon('chevron', 10));
     this.cmdToolBtn.setAttribute('aria-label', `Command-click tool: ${lab(ui.cmdTool)}`);

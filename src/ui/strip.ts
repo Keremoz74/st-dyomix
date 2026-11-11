@@ -113,7 +113,7 @@ export function channelStrip(cmd: Commands, track: Track | null, opts: { selecte
     const ins = inserts[i];
     if (ins) {
       const name = cmd.pluginName(ins);
-      const nameBtn = h('button', { class: 'st-fx-name', title: `${name}: click to open`, onClick: () => cmd.openPlugin(owner, ins.id) }, name);
+      const nameBtn = h('button', { class: 'st-fx-name', title: `${name}: click to open`, onClick: () => cmd.togglePlugin(owner, ins.id) }, name);
       const slot = h('div', { class: 'st-slot st-fx' + (ins.bypass ? ' byp' : '') },
         h('button', { class: 'st-fx-pow', 'aria-label': `${ins.bypass ? 'Enable' : 'Bypass'} ${name}`, 'aria-pressed': String(!ins.bypass), title: ins.bypass ? 'Enable' : 'Bypass', onClick: () => cmd.toggleBypass(owner, ins.id) }, icon('power', 10)),
         nameBtn);
@@ -176,14 +176,23 @@ export function channelStrip(cmd: Commands, track: Track | null, opts: { selecte
 
   const el = h('div', { class: 'strip' + (opts.selected ? ' selected' : '') },
     track?.instrument
-      ? (() => { const b: HTMLButtonElement = h('button', { class: 'st-slot st-inst', title: 'Open instrument (right-click to change it)', 'aria-label': `Open instrument on ${track.name}`, onClick: () => cmd.openPlugin(track.id, 'inst') }, track.instrument.type === 'wam' ? track.instrument.wam?.name ?? 'Plug-in' : track.instrument.preset);
+      ? (() => { const b: HTMLButtonElement = h('button', { class: 'st-slot st-inst', title: 'Open instrument (right-click to change it)', 'aria-label': `Open instrument on ${track.name}`, onClick: () => cmd.togglePlugin(track.id, 'inst') }, track.instrument.type === 'wam' ? track.instrument.wam?.name ?? 'Plug-in' : track.instrument.preset);
           b.addEventListener('contextmenu', e => { e.preventDefault(); openMenu(b, instrumentMenu(cmd, track.id)); }); return b; })()
-      : h('div', { class: 'st-slot st-in' }, track?.kind === 'aux' ? `Bus ${track.bus}` : track?.kind === 'folder' ? 'Stack' : track ? 'Input 1' : 'Stereo'),
+      : track && track.kind !== 'aux' && track.kind !== 'folder'
+        ? (() => { const b: HTMLButtonElement = h('button', { class: 'st-slot st-in', 'aria-haspopup': 'menu', title: 'Input', onClick: () => openMenu(b, [
+            { header: 'Input' }, ['Input 1 (microphone / audio interface)', '', () => {}, true], '-',
+            ['Input Monitoring', 'I', () => cmd.toggleTrack('monitor', track.id), !!track.monitor], ['Record Enable', 'R', () => cmd.toggleTrack('armed', track.id), !!track.armed],
+            ['Recording Settings…', '', () => cmd.openSettings('recording')],
+          ]) }, 'Input 1'); return b; })()
+        : h('div', { class: 'st-slot st-in' }, track?.kind === 'aux' ? `Bus ${track.bus}` : track?.kind === 'folder' ? 'Stack' : 'Stereo'),
     h('div', { class: 'st-label' }, 'AUDIO FX'),
     slots,
     h('div', { class: 'st-label' }, canSend ? 'SENDS' : ' '),
     sendSlots,
-    h('div', { class: 'st-slot st-out' + (track?.parent ? ' st-to-stack' : '') }, outName),
+    (() => { const b: HTMLButtonElement = h('button', { class: 'st-slot st-out' + (track?.parent ? ' st-to-stack' : ''), 'aria-haspopup': 'menu', title: 'Output', onClick: () => openMenu(b, [
+        { header: 'Output' }, [outName, '', () => {}, true],
+        { header: track ? 'To feed a bus (reverb, delay…), use a Send above' : 'The main output of the song' },
+      ]) }, outName); return b; })(),
     track && track.kind !== 'aux'
       ? (() => { const m = track.autoMode ?? 'off'; const b: HTMLButtonElement = h('button', { class: `st-slot st-auto auto-${m}`, title: 'Automation mode', 'aria-label': `Automation mode: ${m}`, onClick: () => openMenu(b, (['off', 'read', 'touch'] as const).map(x => [x[0].toUpperCase() + x.slice(1), '', () => cmd.setAutoMode(track.id, x), x === m] as MenuItem)) }, m[0].toUpperCase() + m.slice(1)); return b; })()
       : h('div', { class: 'st-slot st-blank' }),

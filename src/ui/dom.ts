@@ -94,8 +94,23 @@ window.addEventListener('daw-toast', e => toast((e as CustomEvent).detail));
 
 /** Popup menu anchored to an element. Items: [label, shortcut, action] or '-' */
 export type MenuItem = [string, string, () => void, boolean?] | '-' | { label: string; sub: MenuItem[]; checked?: boolean } | { header: string };
+// The element whose menu is open, and the one just closed by a tap outside it (for tap-again-to-close).
+let openAnchor: HTMLElement | null = null;
+let lastClosed: { anchor: HTMLElement | null; t: number } = { anchor: null, t: 0 };
 export function openMenu(anchor: HTMLElement, items: MenuItem[], level = 0) {
-  if (level === 0) closeMenus(); else document.querySelectorAll('.menu').forEach(m => { if (+((m as HTMLElement).dataset.level ?? 0) >= level) { (m as any)._cleanup?.(); m.remove(); } });
+  if (level === 0) {
+    // tapping the button of the open menu again closes it (and never re-opens it a moment later)
+    const again = (openAnchor && (openAnchor === anchor || openAnchor.contains(anchor))) ||
+      (lastClosed.anchor && (lastClosed.anchor === anchor || lastClosed.anchor.contains(anchor)) && performance.now() - lastClosed.t < 1000);
+    const wasOpen = !!document.querySelector('.menu');
+    if (again) { closeMenus(); lastClosed = { anchor: null, t: 0 }; return null as unknown as HTMLDivElement; }
+    if (wasOpen) closeMenus();
+  } else {
+    // a submenu's parent tapped again closes that submenu
+    const sub = [...document.querySelectorAll<HTMLElement>('.menu')].find(m => +(m.dataset.level ?? 0) === level && (m as any)._anchor === anchor);
+    if (sub && (anchor as any)._tapOpened) { document.querySelectorAll('.menu').forEach(m => { if (+((m as HTMLElement).dataset.level ?? 0) >= level) { (m as any)._cleanup?.(); m.remove(); } }); (anchor as any)._tapOpened = false; return sub as HTMLDivElement; }
+  }
+  if (level > 0) document.querySelectorAll('.menu').forEach(m => { if (+((m as HTMLElement).dataset.level ?? 0) >= level) { (m as any)._cleanup?.(); m.remove(); } });
   const r = anchor.getBoundingClientRect();
   const menu = h('div', { class: 'menu', role: 'menu', 'data-level': String(level) },
     items.map(it => {
@@ -103,7 +118,7 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], level = 0) {
       if ('header' in it) return h('div', { class: 'menu-header' }, it.header);
       if ('sub' in it) {
         const b: HTMLButtonElement = h('button', { class: 'menu-item menu-parent' + (it.checked ? ' checked' : ''), role: 'menuitem', 'aria-haspopup': 'menu',
-          onClick: () => openMenu(b, it.sub, level + 1) },
+          onClick: () => { const m = openMenu(b, it.sub, level + 1); if (m) (b as any)._tapOpened = !(b as any)._tapOpened; } },
           h('span', { class: 'menu-check' }, it.checked ? '✓' : ''), h('span', { class: 'menu-label' }, it.label), h('span', { class: 'menu-key' }, '›'));
         b.addEventListener('pointerenter', e => { if (e.pointerType === 'mouse') openMenu(b, it.sub, level + 1); });
         return b;
@@ -113,6 +128,8 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], level = 0) {
       if (level === 0) b.addEventListener('pointerenter', e => { if (e.pointerType === 'mouse') document.querySelectorAll('.menu').forEach(m => { if (+((m as HTMLElement).dataset.level ?? 0) > level) { (m as any)._cleanup?.(); m.remove(); } }); });
       return b;
     }));
+  (menu as any)._anchor = anchor;
+  if (level === 0) { openAnchor = anchor; anchor.setAttribute('aria-expanded', 'true'); }
   document.body.appendChild(menu);
   const mw = menu.offsetWidth, mh = Math.min(menu.offsetHeight, innerHeight - 8);
   if (level > 0) {
@@ -120,11 +137,25 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], level = 0) {
     menu.style.left = Math.max(4, left) + 'px';
     menu.style.top = Math.max(4, Math.min(r.top - 4, innerHeight - mh - 4)) + 'px';
   } else {
+    // never cover the button that opened it (so tapping it again closes the menu instead of hitting an item):
+    // open below it, or above when there is clearly more room there, and scroll inside if it is long
     menu.style.left = Math.max(4, Math.min(r.left, innerWidth - mw - 4)) + 'px';
-    menu.style.top = (r.bottom + mh + 4 > innerHeight ? Math.max(4, r.top - mh - 4) : r.bottom + 4) + 'px';
+    const below = innerHeight - r.bottom - 8, above = r.top - 8, full = menu.scrollHeight;
+    if (full <= below || below >= above) {
+      menu.style.top = r.bottom + 4 + 'px'; menu.style.maxHeight = `${Math.max(120, below)}px`;
+    } else {
+      const hgt = Math.min(full, above);
+      menu.style.top = Math.max(4, r.top - 4 - hgt) + 'px'; menu.style.maxHeight = `${hgt}px`;
+    }
   }
   if (level === 0) setTimeout(() => document.addEventListener('pointerdown', outside, true));
-  function outside(e: Event) { if (!(e.target as Element).closest?.('.menu')) { closeMenus(); swallowGesture(e); } }
+  function outside(e: Event) {
+    if ((e.target as Element).closest?.('.menu')) return;
+    const a = openAnchor;
+    closeMenus(); swallowGesture(e);
+    // remember it, so the click that may still follow on the same button does not re-open the menu
+    if (a && a.contains(e.target as Node)) lastClosed = { anchor: a, t: performance.now() };
+  }
   (menu as any)._cleanup = () => document.removeEventListener('pointerdown', outside, true);
   return menu;
 }
@@ -141,7 +172,7 @@ export function swallowGesture(e: Event) {
     ev.stopPropagation(); (ev as any).stopImmediatePropagation?.();
     if (ev.cancelable && ev.type !== 'pointerup' && ev.type !== 'pointercancel') ev.preventDefault();
     if (ev.type === 'click' || ev.type === 'contextmenu') done();
-    else if (ev.type === 'pointerup' || ev.type === 'pointercancel') { clearTimeout(timer); timer = window.setTimeout(done, 350); }
+    else if (ev.type === 'pointerup' || ev.type === 'pointercancel') { clearTimeout(timer); timer = window.setTimeout(done, 800); }
   };
   types.forEach(t => addEventListener(t, block, true));
   timer = window.setTimeout(done, 8000);
@@ -149,6 +180,7 @@ export function swallowGesture(e: Event) {
 
 export function closeMenus() {
   document.querySelectorAll('.menu').forEach(m => { (m as any)._cleanup?.(); m.remove(); });
+  if (openAnchor) { openAnchor.removeAttribute('aria-expanded'); openAnchor = null; }
 }
 
 /** Small floating text field (rename a marker, type a tempo). Enter/blur commits, Esc cancels. */

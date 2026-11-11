@@ -118,6 +118,8 @@ export class PluginWindow {
     return this.cmd.store.insertsOf(this.owner).find(i => i.id === this.insId);
   }
 
+  /** True when this plug-in's window is the one showing. */
+  isShowing(owner: string, insId: string) { return !!this.el && this.owner === owner && this.insId === insId; }
   open(owner: string, insId: string) {
     this.owner = owner; this.insId = insId; this.shownKey = '';
     this.render();

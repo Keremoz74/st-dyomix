@@ -506,6 +506,8 @@ export class Commands {
   // ----- plugins -----
   /** Set by main.ts: opens the plugin window. */
   openPlugin: (owner: string, insertId: string) => void = () => {};
+  /** Opens a plug-in window, or closes it when it is already the one showing (tap the slot again). */
+  togglePlugin: (owner: string, insId: string) => void = (o, i) => this.openPlugin(o, i);
 
   addPlugin = (owner: string, type: PluginType, wam?: WamRef, native?: NativeRef) => {
     const list = this.store.insertsOf(owner);

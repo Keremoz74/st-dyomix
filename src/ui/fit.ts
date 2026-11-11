@@ -7,8 +7,14 @@ function fit(el: HTMLElement) {
   // phones and portrait tablets wrap the bar onto two rows instead (bigger touch targets)
   if (innerWidth <= 760 || (el.classList.contains('control-bar') && matchMedia('(pointer: coarse) and (orientation: portrait)').matches)) { el.style.zoom = ''; el.classList.remove('fit'); return; } 
   el.classList.add('fit');
+  el.classList.remove('compact');
   el.style.zoom = '1';
-  const need = el.scrollWidth, avail = el.clientWidth;
+  let need = el.scrollWidth;
+  const avail = el.clientWidth;
+  if (need <= avail + 1) return;
+  // first drop the text labels (icons stay), then scale what is left; whatever still doesn't fit can be scrolled
+  el.classList.add('compact');
+  need = el.scrollWidth;
   if (need > avail + 1) el.style.zoom = String(Math.max(MIN, Math.floor((avail / need) * 1000) / 1000));
 }
 

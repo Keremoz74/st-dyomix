@@ -18,7 +18,7 @@ export class ToolWindows {
     cmd.openGroups = () => this.renderGroups();
     cmd.openLocations = () => this.renderLocs();
     cmd.openStripSilence = () => this.renderStrip();
-    cmd.openTuner = () => this.openTuner();
+    cmd.openTuner = () => { if (this.tuner.isOpen) this.tuner.close(); else this.openTuner(); };
     cmd.store.on(k => {
       if ((k === 'structure' || k === 'mix') && this.groups.isOpen && !this.groups.el?.contains(document.activeElement)) this.renderGroups();
       if ((k === 'structure' || k === 'transport') && this.locs.isOpen && !this.locs.el?.contains(document.activeElement)) this.renderLocs();

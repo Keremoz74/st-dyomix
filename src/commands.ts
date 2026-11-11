@@ -90,7 +90,11 @@ export class Commands {
     const err = await this.engine.startRecording();
     if (err) toast(err);
   };
-  goToStart = () => this.locate(this.ui.cycle.on ? this.ui.cycle.start : 0);
+  goToStart = () => {
+    // while recording: keep the take, then jump back (playback jumping mid-take would misplace the audio)
+    if (this.ui.recording) this.engine.stop();
+    this.locate(this.ui.cycle.on ? this.ui.cycle.start : 0);
+  };
   rewind = () => { const b = this.store.beatsPerBar; this.locate(Math.max(0, (Math.ceil(this.engine.currentBeat() / b - 0.05) - 1) * b)); };
   forward = () => { const b = this.store.beatsPerBar; this.locate((Math.floor(this.engine.currentBeat() / b + 0.05) + 1) * b); };
   locate = (beat: number) => {

@@ -29,6 +29,7 @@ const P: Record<string, string> = {
   inspector: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 11v6M12 7h.01',
   mixer: 'M6 4v16M12 4v16M18 4v16M4 14h4M10 8h4M16 16h4',
   rewind: 'M11 6v12L3 12zM21 6v12l-8-6z',
+  tostart: 'M5 6h2.5v12H5zM18.5 6v12L9 12z',
   forward: 'M3 6v12l8-6zM13 6v12l8-6z',
   stop: 'M6 6h12v12H6z',
   play: 'M7 5v14l12-7z',
@@ -61,7 +62,7 @@ const P: Record<string, string> = {
   settings: 'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z',
   zoomOut: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20 20l-4-4M8 11h6',
 };
-const FILLED = new Set(['rewind', 'forward', 'stop', 'play', 'record', 'pointer']);
+const FILLED = new Set(['tostart', 'rewind', 'forward', 'stop', 'play', 'record', 'pointer']);
 
 export function icon(name: string, size = 18): SVGSVGElement {
   const ns = 'http://www.w3.org/2000/svg';

@@ -38,7 +38,7 @@ export class ControlBar {
 
     this.el = h('header', { class: 'control-bar' },
       h('div', { class: 'cb-group' }, this.inspBtn, this.mixBtn),
-      h('div', { class: 'cb-group cb-transport' }, iconBtn('rewind', 'Rewind (,)', cmd.rewind), iconBtn('forward', 'Forward (.)', cmd.forward), iconBtn('stop', 'Stop (go to start when stopped)', cmd.stop), this.playBtn, this.recBtn),
+      h('div', { class: 'cb-group cb-transport' }, iconBtn('tostart', 'Go to Beginning (Return)', cmd.goToStart), iconBtn('rewind', 'Rewind (,)', cmd.rewind), iconBtn('forward', 'Forward (.)', cmd.forward), iconBtn('stop', 'Stop (go to start when stopped)', cmd.stop), this.playBtn, this.recBtn),
       h('div', { class: 'lcd' },
         h('div', { class: 'lcd-cell' }, this.pos, h('span', { class: 'lcd-label' }, 'BAR  BEAT  DIV  TICK')),
         h('div', { class: 'lcd-cell' }, this.tempo, h('span', { class: 'lcd-label' }, 'TEMPO')),

@@ -6,7 +6,7 @@ import type { PluginDef, PluginInstance } from './plugins';
 import { workletsReady } from './worklets';
 import { stereoSplitter } from './plugins';
 
-const ramp = (p: AudioParam, v: number, ctx: BaseAudioContext) => {
+export const ramp = (p: AudioParam, v: number, ctx: BaseAudioContext) => {
   if (!isFinite(v)) return;
   if (ctx instanceof OfflineAudioContext) p.value = v;
   else p.setTargetAtTime(v, ctx.currentTime, 0.015);
@@ -14,14 +14,14 @@ const ramp = (p: AudioParam, v: number, ctx: BaseAudioContext) => {
 const db = (v: number) => Math.pow(10, v / 20);
 const off = (ctx: BaseAudioContext) => ctx instanceof OfflineAudioContext;
 const disc = (...ns: AudioNode[]) => ns.forEach(n => { try { n.disconnect(); } catch { /* already */ } });
-function wetDry(ctx: BaseAudioContext) {
+export function wetDry(ctx: BaseAudioContext) {
   const input = ctx.createGain(), output = ctx.createGain(), dry = ctx.createGain(), wet = ctx.createGain();
   input.connect(dry); dry.connect(output); wet.connect(output);
   const mix = (m: number) => { ramp(dry.gain, Math.cos(m * Math.PI / 2), ctx); ramp(wet.gain, Math.sin(m * Math.PI / 2), ctx); };
   return { input, output, dry, wet, mix };
 }
 /** Plug-in built on an AudioWorklet processor; passes audio through until the worklet module is loaded. */
-function workletFx(ctx: BaseAudioContext, name: string, params: (p: Record<string, number>) => Record<string, number>, outGain?: (p: Record<string, number>) => number): PluginInstance {
+export function workletFx(ctx: BaseAudioContext, name: string, params: (p: Record<string, number>) => Record<string, number>, outGain?: (p: Record<string, number>) => number): PluginInstance {
   const input = ctx.createGain(), output = ctx.createGain();
   if (!workletsReady(ctx)) { input.connect(output); return { input, output, pending: true, set() {}, dispose() { disc(input, output); } }; }
   const node = new AudioWorkletNode(ctx, name, { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2], channelCount: 2, channelCountMode: 'explicit' });

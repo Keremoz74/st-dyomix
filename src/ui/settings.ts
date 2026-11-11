@@ -11,6 +11,9 @@ import { inDesktopApp, hostingAvailable } from '../audio/native';
 import { refreshNativeList } from './pluginmenu';
 import { h, toast } from './dom';
 
+declare const __APP_VERSION__: string;
+export const APP_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev';
+
 type Tab = 'general' | 'audio' | 'recording' | 'keys' | 'plugins' | 'wam';
 const TABS: [Tab, string][] = [['general', 'General'], ['audio', 'Audio'], ['recording', 'Recording & MIDI'], ['keys', 'Key Commands'], ['plugins', 'Plug-in Manager'], ['wam', 'Web Audio Modules']];
 
@@ -97,7 +100,8 @@ export class SettingsWindow {
       this.section('Metronome',
         this.row('Sound', this.select(g.clickSound, [['beep', 'Beep'], ['wood', 'Woodblock'], ['hihat', 'Hi-Hat']], v => s({ clickSound: v }), 'Metronome sound')),
         this.row('Level', this.number(g.clickLevel, 0, 100, 5, v => s({ clickLevel: v }), 'Metronome level', '%'))),
-      h('div', { class: 'set-foot' }, h('button', { class: 'tool-btn', onClick: () => { saveGeneralPrefs({ ...GENERAL_DEFAULTS }); this.render(); } }, 'Reset General Settings')));
+      h('div', { class: 'set-foot' }, h('button', { class: 'tool-btn', onClick: () => { saveGeneralPrefs({ ...GENERAL_DEFAULTS }); this.render(); } }, 'Reset General Settings'),
+        h('span', { class: 'grow' }), h('span', { class: 'set-hint' }, `Ozmix Studio ${APP_VERSION}`)));
   }
 
   private async audio() {

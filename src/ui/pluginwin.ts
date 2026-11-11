@@ -195,7 +195,9 @@ export class PluginWindow {
     this.knobs = def.params.map(p => control(this.cmd, this.owner, ins, p));
     this.canvas = null; this.grFill = null; this.grText = null;
     let viz: HTMLElement | null = null;
-    if (ins.type === 'eq' || ins.type === 'geq') { this.canvas = h('canvas', { class: 'pw-eq', 'aria-label': 'EQ curve' }); viz = this.canvas; }
+    if (ins.type === 'eq' || ins.type === 'geq' || ins.type === 'veq') { this.canvas = h('canvas', { class: 'pw-eq', 'aria-label': 'EQ curve' }); viz = this.canvas; }
+    if (ins.type === 'analyzer') { this.canvas = h('canvas', { class: 'pw-eq pw-spec', 'aria-label': 'Spectrum' }); viz = this.canvas; }
+    if (ins.type === 'transient') { /* gain-change display */ }
     if (ins.type === 'comp' || ins.type === 'limiter' || ins.type === 'gate' || ins.type === 'deesser' || ins.type === 'multi') {
       this.grFill = h('div', { class: 'pw-gr-fill' }); this.grText = h('span', { class: 'pw-gr-val' }, '0.0 dB');
       viz = h('div', { class: 'pw-gr' }, h('span', { class: 'pw-gr-label' }, 'Gain Reduction'), h('div', { class: 'pw-gr-bar' }, this.grFill), this.grText);
@@ -265,7 +267,7 @@ export class PluginWindow {
   private renderInstrument(ins: Insert) {
     const { store } = this.cmd;
     const t = store.track(this.owner)!, inst = t.instrument!, def = INSTRUMENTS[inst.type];
-    this.knobs = def.params.map(p => knob(this.cmd, this.owner, ins, p));
+    this.knobs = def.params.map(p => p.options ? choice(this.cmd, this.owner, ins, p) : knob(this.cmd, this.owner, ins, p));
     this.canvas = null; this.grFill = null; this.grText = null;
     const presetBtn: HTMLButtonElement = h('button', { class: 'pw-btn pw-preset', 'aria-haspopup': 'menu', title: 'Presets',
       onClick: () => openMenu(presetBtn, Object.keys(def.presets).map(n => [n, '', () => this.cmd.setPreset(t.id, n), n === inst.preset] as MenuItem)) }, inst.preset, icon('chevron', 10));
@@ -311,11 +313,36 @@ export class PluginWindow {
     if (!this.el) return;
     const inst = this.cmd.engine.plugin(this.owner, this.insId);
     if (this.canvas && inst?.eqNodes) this.drawEq(inst.eqNodes);
+    if (this.canvas && inst?.analyser) this.drawSpectrum(inst.analyser);
     if (this.grFill && inst?.reduction) {
       const r = Math.min(0, inst.reduction());
       this.grFill.style.width = `${Math.min(100, (-r / 30) * 100)}%`;
       this.grText!.textContent = `${r.toFixed(1)} dB`;
     }
+  }
+
+  private spec: Float32Array<ArrayBuffer> | null = null;
+  /** Analyzer: log-frequency spectrum with a dB grid. */
+  private drawSpectrum(an: AnalyserNode) {
+    const c = this.canvas!, dpr = devicePixelRatio || 1, W = c.clientWidth, H = c.clientHeight;
+    if (!W) return;
+    if (c.width !== W * dpr) { c.width = W * dpr; c.height = H * dpr; }
+    const g = c.getContext('2d')!; g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (!this.spec || this.spec.length !== an.frequencyBinCount) this.spec = new Float32Array(an.frequencyBinCount);
+    an.getFloatFrequencyData(this.spec);
+    const sr = an.context.sampleRate, lo = an.minDecibels, hi = an.maxDecibels;
+    g.fillStyle = '#111214'; g.fillRect(0, 0, W, H);
+    g.strokeStyle = '#2a2c31'; g.fillStyle = '#6a6d75'; g.font = '9px Inter, sans-serif'; g.lineWidth = 1;
+    const xOf = (f: number) => (Math.log10(f / 20) / 3) * W;
+    for (const f of [50, 100, 200, 500, 1000, 2000, 5000, 10000]) { const x = Math.round(xOf(f)) + 0.5; g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke(); g.fillText(f >= 1000 ? `${f / 1000}k` : `${f}`, x + 2, H - 3); }
+    for (let d = Math.ceil(lo / 12) * 12; d < hi; d += 12) { const y = Math.round(((hi - d) / (hi - lo)) * H) + 0.5; g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); g.fillText(`${d}`, 2, y - 2); }
+    const grad = g.createLinearGradient(0, 0, 0, H); grad.addColorStop(0, '#4c9affcc'); grad.addColorStop(1, '#4c9aff10');
+    g.beginPath(); g.moveTo(0, H);
+    for (let x = 0; x <= W; x += 1.5) {
+      const f = 20 * Math.pow(1000, x / W), bin = Math.min(this.spec.length - 1, Math.round(f / (sr / 2) * this.spec.length));
+      const v = Math.max(lo, Math.min(hi, this.spec[bin])); g.lineTo(x, ((hi - v) / (hi - lo)) * H);
+    }
+    g.lineTo(W, H); g.closePath(); g.fillStyle = grad; g.fill(); g.strokeStyle = '#8fbfff'; g.stroke();
   }
 
   private freqs = (() => { const f = new Float32Array(240); for (let i = 0; i < f.length; i++) f[i] = 20 * Math.pow(1000, i / (f.length - 1)); return f; })();

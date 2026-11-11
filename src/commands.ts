@@ -1,5 +1,5 @@
 // All user-facing commands live here so buttons, menus and key commands share them.
-import { Store, Region, ToolId, Insert, uid, cloneRegion, isMidi } from './model';
+import { Store, Region, Track, ToolId, Insert, uid, cloneRegion, isMidi } from './model';
 import { INSTRUMENTS, InstType, newInstrument } from './audio/instruments';
 import { PluginType, PLUGINS, MAX_INSERTS, defaultParams } from './audio/plugins';
 import { Engine } from './audio/engine';
@@ -210,6 +210,111 @@ export class Commands {
       this.ui.selectedRegionIds = new Set();
       for (const r of sel) { const c = cloneRegion(r, { id: uid('r'), start: r.start + (end - start) }); this.store.project.regions.push(c); this.ui.selectedRegionIds.add(c.id); }
     });
+  };
+
+  // ----- Cut / Copy / Paste, nudge, transpose, quantize, reverse, normalize (arrangement) -----
+  private regionClip: { regions: Region[]; base: number; topTrack: number } | null = null;
+  copyRegions = () => {
+    const sel = this.store.selectedRegions(); if (!sel.length) return;
+    const vis = this.store.visibleTracks(), idx = (r: Region) => vis.findIndex(t => t.id === r.trackId);
+    this.regionClip = { regions: sel.map(r => cloneRegion(r)), base: Math.min(...sel.map(r => r.start)), topTrack: Math.min(...sel.map(idx)) };
+    toast(`${sel.length} region${sel.length === 1 ? '' : 's'} copied`);
+  };
+  cutRegions = () => { if (!this.store.selectedRegions().length) return; this.copyRegions(); this.deleteSelected(); };
+  /** Pastes at the playhead, starting on the selected track (keeps the regions' relative tracks and times). */
+  pasteRegions = () => {
+    const clip = this.regionClip; if (!clip) { toast('Nothing to paste: copy regions first (⌘C)'); return; }
+    const st = this.store, vis = st.visibleTracks();
+    const sel = vis.findIndex(t => t.id === this.ui.selectedTrackId);
+    const at = st.snapBeat(this.ui.playhead);
+    this.edit(() => {
+      this.ui.selectedRegionIds = new Set();
+      for (const r of clip.regions) {
+        const origIdx = vis.findIndex(t => t.id === r.trackId);
+        let target = sel >= 0 ? vis[sel + (origIdx - clip.topTrack)] : undefined;
+        const fits = (t?: Track) => !!t && t.kind !== 'folder' && t.kind !== 'aux' && (r.kind === 'midi' ? t.kind === 'inst' : t.kind === 'audio');
+        if (!fits(target)) target = st.track(r.trackId);
+        if (!fits(target)) continue;
+        const c = cloneRegion(r, { id: uid('r'), trackId: target!.id, start: at + (r.start - clip.base) });
+        st.project.regions.push(c); this.ui.selectedRegionIds.add(c.id);
+      }
+    });
+  };
+  /** Moves the selected regions by one grid step (⌥← / ⌥→). */
+  nudgeRegions = (dir: number) => {
+    const sel = this.store.selectedRegions(); if (!sel.length) return;
+    const step = this.store.snapUnit() || 0.25;
+    if (dir < 0 && Math.min(...sel.map(r => r.start)) - step < -1e-9) return;
+    this.edit(() => { for (const r of sel) r.start = Math.max(0, r.start + dir * step); });
+  };
+  /** MIDI regions: transpose all notes. */
+  transposeRegions = (semi: number) => {
+    const sel = this.store.selectedRegions().filter(r => r.kind === 'midi' && r.notes && !r.session && !r.pattern);
+    if (!sel.length) { toast('Select MIDI regions to transpose'); return; }
+    this.edit(() => { for (const r of sel) for (const n of r.notes!) n.p = Math.max(0, Math.min(127, n.p + semi)); });
+    toast(`Transposed ${semi > 0 ? '+' : ''}${semi}`);
+  };
+  /** MIDI regions: quantize note starts (and lengths) to the Piano Roll grid. */
+  quantizeRegions = () => {
+    const sel = this.store.selectedRegions().filter(r => r.kind === 'midi' && r.notes && !r.session && !r.pattern);
+    if (!sel.length) { toast('Select MIDI regions to quantize'); return; }
+    const u = this.ui.prSnap || 0.25;
+    this.edit(() => { for (const r of sel) for (const n of r.notes!) { n.s = Math.max(0, Math.round(n.s / u) * u); n.l = Math.max(u, Math.round(n.l / u) * u); } });
+    toast(`Quantized ${sel.length} region${sel.length === 1 ? '' : 's'}`);
+  };
+  /** Audio regions: reverse or normalize the part of the file the region plays (makes a new file; undoable). */
+  processAudioRegions = (op: 'reverse' | 'normalize') => {
+    const st = this.store;
+    const sel = st.selectedRegions().filter(r => r.kind !== 'midi' && !r.takes && !r.flex?.on && st.buffers.has(r.bufferId));
+    if (!sel.length) { toast('Select audio regions (not take folders or Flex regions)'); return; }
+    this.edit(() => {
+      for (const r of sel) {
+        const src = st.buffers.get(r.bufferId)!, sr = src.sampleRate;
+        const from = Math.floor(r.offset * sr), n = Math.max(1, Math.min(src.length - from, Math.ceil(st.secs(r.start, r.start + r.length) * sr)));
+        const out = this.engine.ctx.createBuffer(src.numberOfChannels, n, sr);
+        let peak = 0;
+        for (let c = 0; c < src.numberOfChannels; c++) { const d = src.getChannelData(c).subarray(from, from + n); for (let i = 0; i < n; i++) peak = Math.max(peak, Math.abs(d[i])); }
+        const g = op === 'normalize' && peak > 1e-6 ? Math.pow(10, -0.1 / 20) / peak : 1;
+        for (let c = 0; c < src.numberOfChannels; c++) {
+          const d = src.getChannelData(c).subarray(from, from + n), o = out.getChannelData(c);
+          for (let i = 0; i < n; i++) o[i] = (op === 'reverse' ? d[n - 1 - i] : d[i]) * g;
+        }
+        r.bufferId = st.addBuffer(out); r.offset = 0;
+        if (op === 'reverse') { const fi = r.fadeIn; r.fadeIn = r.fadeOut; r.fadeOut = fi; }
+      }
+    });
+    toast(op === 'reverse' ? 'Reversed' : 'Normalized to −0.1 dBFS');
+  };
+  /** Logic: New Track with Duplicate Settings (⌘D) — plug-ins, instrument and sends, without regions. */
+  duplicateTrack = () => {
+    const t = this.store.track(this.ui.selectedTrackId ?? ''); if (!t || t.kind === 'folder') return;
+    this.edit(() => {
+      const c: Track = JSON.parse(JSON.stringify(t));
+      c.id = uid('t'); c.name = `${t.name} 2`; c.armed = false; c.freeze = undefined;
+      c.inserts = c.inserts.map(i => ({ ...i, id: uid('fx') }));
+      const list = this.store.project.tracks, i = list.indexOf(t);
+      list.splice(i + 1, 0, c);
+      this.ui.selectedTrackId = c.id;
+    });
+  };
+  /** Logic: Bounce in Place — renders the track with its plug-ins to a new audio track and mutes the original. */
+  bounceInPlace = async () => {
+    const st = this.store, t = st.track(this.ui.selectedTrackId ?? '');
+    if (!t || t.kind === 'folder' || t.kind === 'aux') { toast('Select a track to bounce in place'); return; }
+    if (!st.project.regions.some(r => r.trackId === t.id)) { toast('The track has no regions'); return; }
+    toast(`Bouncing “${t.name}” in place…`);
+    await this.engine.captureWamStates();
+    const buf = await this.engine.renderTrack(t, t.inserts, 2);
+    this.edit(() => {
+      const n = st.addTrack(`${t.name} Bnc`.slice(0, 24));
+      const list = st.project.tracks; list.splice(list.indexOf(n), 1); list.splice(list.indexOf(t) + 1, 0, n);
+      n.volume = t.volume; n.pan = t.pan; n.sends = t.sends ? JSON.parse(JSON.stringify(t.sends)) : undefined; n.parent = t.parent;
+      const r: Region = { id: uid('r'), trackId: n.id, bufferId: st.addBuffer(buf), name: `${t.name} (bounce)`, start: 0, length: st.beatAfter(0, buf.duration), offset: 0, muted: false };
+      st.project.regions.push(r);
+      t.mute = true;
+      this.ui.selectedTrackId = n.id; this.ui.selectedRegionIds = new Set([r.id]);
+    });
+    toast(`“${t.name}” bounced to a new track (original muted)`);
   };
 
   /** Region gain (dB) and fades (beats); one undo step per call. */
@@ -478,13 +583,15 @@ export class Commands {
   newTrack = () => { this.edit(() => this.store.addTrack()); };
   newInstrumentTrack = (type: InstType = 'synth', preset?: string) => {
     const inst = newInstrument(type, preset);
-    this.edit(() => { const t = this.store.addTrack(type === 'drums' ? 'Drum Kit' : type === 'sampler' ? 'Sampler' : inst.preset, true, 'inst', inst); t.armed = false; });
+    this.edit(() => { const t = this.store.addTrack(type === 'drums' ? 'Drum Kit' : type === 'sampler' ? 'Sampler' : type === 'epiano' ? 'E-Piano' : type === 'organ' ? 'Organ' : inst.preset, true, 'inst', inst); t.armed = false; });
   };
   newTrackMenu = (): [string, string, () => void][] => [
     ['New Audio Track', '⌥⌘A', this.newTrack],
     ['New Software Instrument Track', '⌥⌘S', () => this.newInstrumentTrack('synth')],
     ['New Drum Kit Track', '', () => this.newInstrumentTrack('drums')],
     ['New Sampler Track', '', () => this.newInstrumentTrack('sampler')],
+    ['New Electric Piano Track', '', () => this.newInstrumentTrack('epiano')],
+    ['New Organ Track', '', () => this.newInstrumentTrack('organ')],
     ['New Drummer Track', '', () => this.newSessionTrack('drums')],
     ['New Session Bass Track', '', () => this.newSessionTrack('bass')],
     ['New Session Keys Track', '', () => this.newSessionTrack('keys')],

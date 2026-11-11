@@ -2,8 +2,9 @@
 // (live or offline), so the same code runs for playback and for bounce.
 
 import { MORE_PLUGINS, MoreType } from './plugins2';
+import { THIRD_PLUGINS, ThirdType } from './plugins3';
 
-export type PluginType = 'eq' | 'comp' | 'reverb' | 'delay' | 'chorus' | 'drive' | 'limiter' | 'tremolo' | 'autofilter' | MoreType | 'wam' | 'native';
+export type PluginType = 'eq' | 'comp' | 'reverb' | 'delay' | 'chorus' | 'drive' | 'limiter' | 'tremolo' | 'autofilter' | MoreType | ThirdType | 'wam' | 'native';
 
 export interface ParamDef {
   id: string;
@@ -28,6 +29,8 @@ export interface PluginInstance {
   reduction?: () => number;
   /** Waiting for an AudioWorklet module; the engine rebuilds it once loaded. */
   pending?: boolean;
+  /** Analyzer plug-in: the spectrum source. */
+  analyser?: AnalyserNode;
 }
 
 export interface PluginDef {
@@ -339,13 +342,13 @@ COMP.presets = {
   'Heavy Squash': { threshold: -35, ratio: 12, attack: 1, release: 60, knee: 0, makeup: 12 },
 };
 REVERB.presets = { 'Small Room': { decay: 0.7, predelay: 5, tone: 6000, mix: 18 }, 'Big Hall': { decay: 3.5, predelay: 30, tone: 8000, mix: 30 }, 'Dark Ambience': { decay: 5, predelay: 60, tone: 2500, mix: 35 } };
-for (const d of MORE_PLUGINS) d.category = d.category ?? 'Utility';
+for (const d of [...MORE_PLUGINS, ...THIRD_PLUGINS]) d.category = d.category ?? 'Utility';
 
-export const PLUGINS = Object.fromEntries([EQ, COMP, REVERB, DELAY, CHORUS, DRIVE, LIMITER, TREMOLO, AUTOFILTER, ...MORE_PLUGINS].map(d => [d.type, d])) as Record<PluginType, PluginDef>;
-export const PLUGIN_LIST: PluginDef[] = [EQ, GEQ(), COMP, LIMITER, ...MORE_PLUGINS.filter(d => d.type !== 'geq'), REVERB, DELAY, CHORUS, DRIVE, TREMOLO, AUTOFILTER];
+export const PLUGINS = Object.fromEntries([EQ, COMP, REVERB, DELAY, CHORUS, DRIVE, LIMITER, TREMOLO, AUTOFILTER, ...MORE_PLUGINS, ...THIRD_PLUGINS].map(d => [d.type, d])) as Record<PluginType, PluginDef>;
+export const PLUGIN_LIST: PluginDef[] = [EQ, GEQ(), COMP, LIMITER, ...MORE_PLUGINS.filter(d => d.type !== 'geq'), REVERB, DELAY, CHORUS, DRIVE, TREMOLO, AUTOFILTER, ...THIRD_PLUGINS];
 function GEQ() { return MORE_PLUGINS.find(d => d.type === 'geq')!; }
 /** Logic's plug-in menu order. */
-export const CATEGORIES = ['EQ', 'Dynamics', 'Reverb', 'Delay', 'Modulation', 'Distortion', 'Amps & Pedals', 'Filter', 'Imaging', 'Utility'];
+export const CATEGORIES = ['EQ', 'Dynamics', 'Reverb', 'Delay', 'Modulation', 'Distortion', 'Amps & Pedals', 'Filter', 'Pitch', 'Imaging', 'Metering', 'Utility'];
 export const MAX_INSERTS = 15;
 
 export const defaultParams = (t: PluginType) => Object.fromEntries(PLUGINS[t].params.map(p => [p.id, p.def]));
@@ -353,6 +356,7 @@ export const defaultParams = (t: PluginType) => Object.fromEntries(PLUGINS[t].pa
 export function fmtParam(p: ParamDef, v: number) {
   let s: string;
   if (p.options) return p.options[Math.round(v)] ?? '';
+  if (!p.unit && p.step === 1) return String(Math.round(v));
   if (p.unit === 'bit') return `${Math.round(v)} bit`;
   if (p.unit === 'x') return `${v < 10 ? v.toFixed(v % 1 ? 2 : 0) : Math.round(v)}x`;
   if (p.unit === 'note') { const n = Math.round(v); return `${['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'][n % 12]}${Math.floor(n / 12) - 2}`; }

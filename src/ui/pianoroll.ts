@@ -47,6 +47,7 @@ export class PianoRoll {
         this.tabsSlot, this.title, h('span', { class: 'grow' }), this.info,
         h('span', { class: 'lm-label' }, 'Grid'), this.snapBtn,
         h('button', { class: 'tool-btn', title: 'Quantize selected notes (Q)', onClick: () => this.quantize() }, 'Q', h('span', {}, 'Quantize')),
+        (() => { const b: HTMLButtonElement = h('button', { class: 'tool-btn', 'aria-haspopup': 'menu', title: 'Note functions (selected notes, or all)', onClick: () => openMenu(b, this.fnMenu()) }, 'Functions', icon('chevron', 12)); return b; })(),
         h('span', { class: 'lm-div' }),
         h('button', { class: 'tool-btn', 'aria-label': 'Zoom out', onClick: () => this.zoom(1 / 1.3) }, icon('zoomOut', 16)),
         h('button', { class: 'tool-btn', 'aria-label': 'Zoom in', onClick: () => this.zoom(1.3) }, icon('zoomIn', 16)),
@@ -155,6 +156,34 @@ export class PianoRoll {
   }
   private commit() { this.fitRegion(); this.cmd.store.emit('structure'); this.cmd.engine.resync(); }
   private audition(p: number, v = 100) { const t = this.track; if (t) this.cmd.engine.audition(t.id, p, v); }
+
+  /** Logic's MIDI Functions: work on the selected notes, or all notes when none are selected. */
+  private fnMenu(): MenuItem[] {
+    const run = (name: string, fn: (ns: Note[], all: Note[]) => void) => () => {
+      const r = this.region; if (!r?.notes?.length) return;
+      const ns = this.sel.size ? [...this.sel] : r.notes;
+      this.cmd.store.checkpoint(); fn(ns, r.notes); this.commit(); toast(`${name}: ${ns.length} note${ns.length === 1 ? '' : 's'}`);
+    };
+    const vel = (d: number) => run(`Velocity ${d > 0 ? '+' : ''}${d}`, ns => ns.forEach(n => { n.v = Math.max(1, Math.min(127, n.v + d)); }));
+    return [
+      ['Legato', '', run('Legato', ns => {
+        const sorted = [...ns].sort((a, b) => a.s - b.s);
+        for (const n of sorted) { const next = sorted.find(m => m.s > n.s + 1e-6); if (next) n.l = Math.max(0.0625, next.s - n.s); }
+      })],
+      ['Humanize', '', run('Humanize', ns => ns.forEach(n => { n.s = Math.max(0, n.s + (Math.random() - 0.5) * 0.04); n.v = Math.max(1, Math.min(127, Math.round(n.v + (Math.random() - 0.5) * 16))); }))],
+      '-',
+      ['Velocity +10', '', vel(10)], ['Velocity −10', '', vel(-10)],
+      ['Fixed Velocity 100', '', run('Fixed velocity', ns => ns.forEach(n => { n.v = 100; }))],
+      ['Velocity Ramp Up', '', run('Velocity ramp', ns => { const s = [...ns].sort((a, b) => a.s - b.s); s.forEach((n, i) => { n.v = Math.round(40 + (87 * i) / Math.max(1, s.length - 1)); }); })],
+      '-',
+      ['Double Speed', '', run('Double speed', ns => { const o = Math.min(...ns.map(n => n.s)); ns.forEach(n => { n.s = o + (n.s - o) / 2; n.l = Math.max(0.03125, n.l / 2); }); })],
+      ['Half Speed', '', run('Half speed', ns => { const o = Math.min(...ns.map(n => n.s)); ns.forEach(n => { n.s = o + (n.s - o) * 2; n.l *= 2; }); })],
+      ['Reverse Order', '', run('Reverse', ns => { const a = Math.min(...ns.map(n => n.s)), b = Math.max(...ns.map(n => n.s + n.l)); ns.forEach(n => { n.s = a + (b - (n.s + n.l) - a); }); })],
+      '-',
+      ['Transpose +12', '', run('Octave up', ns => ns.forEach(n => { n.p = Math.min(127, n.p + 12); }))],
+      ['Transpose −12', '', run('Octave down', ns => ns.forEach(n => { n.p = Math.max(0, n.p - 12); }))],
+    ];
+  }
 
   deleteSelected() {
     const r = this.region; if (!r?.notes || !this.sel.size) return;

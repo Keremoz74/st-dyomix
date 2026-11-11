@@ -47,6 +47,8 @@ export function instrumentMenu(cmd: Commands, trackId: string): MenuItem[] {
     { header: 'Built-in' },
     ['Studio Synth', '', () => cmd.setInstrumentType(trackId, 'synth'), cur?.type === 'synth'],
     ['Drum Kit', '', () => cmd.setInstrumentType(trackId, 'drums'), cur?.type === 'drums'],
+    ['Electric Piano', '', () => cmd.setInstrumentType(trackId, 'epiano'), cur?.type === 'epiano'],
+    ['Drawbar Organ', '', () => cmd.setInstrumentType(trackId, 'organ'), cur?.type === 'organ'],
     ['Sampler', '', () => cmd.setInstrumentType(trackId, 'sampler'), cur?.type === 'sampler'],
     '-',
     { label: 'Web Audio Modules', sub: [

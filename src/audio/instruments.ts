@@ -4,7 +4,9 @@ import { ParamDef } from './plugins';
 
 import { playWamNote, WamRef } from './wam';
 
-export type InstType = 'synth' | 'drums' | 'sampler' | 'wam';
+import { EPIANO, ORGAN } from './keys';
+
+export type InstType = 'synth' | 'drums' | 'sampler' | 'epiano' | 'organ' | 'wam';
 
 export interface InstrumentState { type: InstType; preset: string; params: Record<string, number>; bufferId?: string; sampleName?: string; wam?: WamRef }
 
@@ -210,7 +212,7 @@ const WAM_INST: InstDef = {
   type: 'wam', name: 'Web Audio Module', params: [], presets: { Default: {} },
   play: (ctx, dest, _p, pitch, vel, when, dur) => playWamNote(ctx, dest, pitch, vel, when, dur),
 };
-export const INSTRUMENTS: Record<InstType, InstDef> = { synth: SYNTH, drums: DRUMS, sampler: SAMPLER, wam: WAM_INST };
+export const INSTRUMENTS: Record<InstType, InstDef> = { synth: SYNTH, drums: DRUMS, sampler: SAMPLER, epiano: EPIANO, organ: ORGAN, wam: WAM_INST };
 
 export function newInstrument(type: InstType, preset?: string): InstrumentState {
   const def = INSTRUMENTS[type];

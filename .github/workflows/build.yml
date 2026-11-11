@@ -57,6 +57,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libgtk-3-dev gstreamer1.0-plugins-good gstreamer1.0-plugins-bad libclang-dev libasound2-dev libxcb1-dev libxcb-util-dev
       - run: npm install
+      - name: Build number → version
+        run: node scripts/set-version.mjs ${{ github.run_number }}
       # macOS signing + notarization only when the secrets exist (an empty variable makes the build try to sign and fail)
       - name: Apple signing secrets
         if: matrix.name == 'macOS'
@@ -121,6 +123,8 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with: { workspaces: 'src-tauri -> target' }
       - run: npm install
+      - name: Build number → version
+        run: node scripts/set-version.mjs ${{ github.run_number }}
       - name: Generate the Android project
         run: |
           npx tauri android init --ci
@@ -170,6 +174,8 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with: { workspaces: 'src-tauri -> target' }
       - run: npm install
+      - name: Build number → version
+        run: node scripts/set-version.mjs ${{ github.run_number }}
       - name: Generate the Xcode project
         env:
           APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}

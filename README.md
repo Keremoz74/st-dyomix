@@ -18,6 +18,8 @@ tsc -p .             # type-check
 - `src/audio/instruments.ts`: software instruments (Studio Synth with presets, Drum Kit)
 - `src/ui/pianoroll.ts`: Piano Roll editor
 - `src/audio/plugins2.ts` + `src/audio/worklets.ts`: more Audio FX — Noise Gate, DeEsser, Multipressor, Phaser, Flanger, Ring Modulator, Amp Designer, Bitcrusher, Exciter, Space Designer (convolution), Stereo Delay, Graphic EQ, Stereo Spread, Gain — with factory presets
+- `src/audio/plugins3.ts`: Tape Delay, Vintage EQ, Pitch Shifter, Envelope Filter, Transient Designer, Tape Saturator, Fuzz, Wah, Analyzer
+- `src/audio/keys.ts`: Electric Piano (FM) and Drawbar Organ instruments
 - `src/audio/wam.ts` + `src/ui/pluginbrowser.ts`: Web Audio Modules 2.0 host (effects + instruments, community catalog, add by URL, state saved with the project)
 - `src/audio/native.ts` + `src/audio/freeze.ts` + `src-tauri/src/native.rs`: native VST3/AU plug-ins in the desktop app (scan; offline rendering as an auto-updating freeze)
 - `src/plugin-prefs.ts`: user presets, favorites, hidden plug-ins, My Plug-ins

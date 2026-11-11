@@ -79,7 +79,9 @@ export class TracksArea {
     ]);
     const editMenu = menuBtn('Edit', () => [
       ['Undo', K('⌘Z'), cmd.undo], ['Redo', K('⇧⌘Z'), cmd.redo], '-',
+      ['Cut', K('⌘X'), cmd.cutRegions], ['Copy', K('⌘C'), cmd.copyRegions], ['Paste at Playhead', K('⌘V'), cmd.pasteRegions],
       ['Delete', '⌫', cmd.deleteSelected], ['Select All', K('⌘A'), cmd.selectAll], '-',
+      ['Nudge Left', K('⌥←'), () => cmd.nudgeRegions(-1)], ['Nudge Right', K('⌥→'), () => cmd.nudgeRegions(1)], '-',
       ['Split Regions at Playhead', K('⌘T'), cmd.splitAtPlayhead],
       ['Pack Take Folder', K('⌃⌘F'), cmd.packTakeFolder], ['Flatten Take Folder', '', () => cmd.flattenTakeFolder()], ['Join Regions', K('⌘J'), () => cmd.joinSelected()],
       ['Repeat Regions Once', K('⌘R'), cmd.repeat], ['Mute Regions On/Off', K('⌃M'), cmd.toggleRegionMute],
@@ -89,6 +91,14 @@ export class TracksArea {
       ['Connect MIDI Keyboard', '', () => cmd.connectMidi()], '-',
       ['Create Empty MIDI Region', '', () => { const t = store.track(store.ui.selectedTrackId); if (t) cmd.createMidiRegion(t.id, Math.floor(store.ui.playhead / store.beatsPerBar) * store.beatsPerBar); }],
       ['Create Pattern Region', '', () => { const t = store.track(store.ui.selectedTrackId); if (t) cmd.createPatternRegion(t.id, Math.floor(store.ui.playhead / store.beatsPerBar) * store.beatsPerBar); }], '-',
+      { label: 'MIDI', sub: [
+        ['Transpose +1', K('⌥↑'), () => cmd.transposeRegions(1)], ['Transpose −1', K('⌥↓'), () => cmd.transposeRegions(-1)],
+        ['Transpose +12', K('⇧⌥↑'), () => cmd.transposeRegions(12)], ['Transpose −12', K('⇧⌥↓'), () => cmd.transposeRegions(-12)], '-',
+        ['Quantize', 'Q', cmd.quantizeRegions],
+      ] },
+      { label: 'Audio', sub: [['Reverse', '', () => cmd.processAudioRegions('reverse')], ['Normalize', '', () => cmd.processAudioRegions('normalize')]] },
+      ['New Track with Duplicate Settings', K('⌘D'), cmd.duplicateTrack],
+      ['Bounce in Place', mac ? '⌃B' : K('⌥⌘B'), cmd.bounceInPlace], '-',
       ['Import Audio File…', K('⇧⌘I'), cmd.importAudio], ['Bounce Project to WAV…', K('⌘B'), cmd.bounce],
     ]);
     const viewMenu = menuBtn('View', () => [
@@ -567,8 +577,11 @@ export class TracksArea {
       ...(r.pattern ? [['Convert to MIDI Region', '', () => cmd.patternToMidi(r)] as MenuItem] : []),
       ...(isMidi(r) && !r.session && !r.pattern ? [['Convert to Pattern Region', '', () => cmd.midiToPattern(r)] as MenuItem] : []),
       '-',
+      ['Cut', K('⌘X'), cmd.cutRegions], ['Copy', K('⌘C'), cmd.copyRegions], ['Paste at Playhead', K('⌘V'), cmd.pasteRegions], '-',
       ['Split at Playhead', '⌘T', cmd.splitAtPlayhead], ['Repeat Once', '⌘R', cmd.repeat],
       [r.muted ? 'Unmute' : 'Mute', '⌃M', cmd.toggleRegionMute],
+      ...(isMidi(r) && !r.session && !r.pattern ? [{ label: 'Transpose', sub: [['+1', '', () => cmd.transposeRegions(1)], ['−1', '', () => cmd.transposeRegions(-1)], ['+12 (octave up)', '', () => cmd.transposeRegions(12)], ['−12 (octave down)', '', () => cmd.transposeRegions(-12)]] } as MenuItem, ['Quantize', 'Q', cmd.quantizeRegions] as MenuItem] : []),
+      ...(!isMidi(r) && !isFolder(r) ? [['Reverse', '', () => cmd.processAudioRegions('reverse')] as MenuItem, ['Normalize', '', () => cmd.processAudioRegions('normalize')] as MenuItem] : []),
       ...(sel.length > 1 && sel.every(x => !isMidi(x)) ? [['Pack Take Folder', '', cmd.packTakeFolder] as MenuItem] : []),
       ...(isFolder(r) ? [['Flatten Take Folder', '', () => cmd.flattenTakeFolder(r)] as MenuItem] : []),
       '-',

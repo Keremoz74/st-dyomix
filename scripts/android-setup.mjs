@@ -40,6 +40,7 @@ const pkg = /^package\s+([\w.]+)/m.exec(readFileSync(act, 'utf8'))[1];
 writeFileSync(act, `package ${pkg}
 
 import android.os.Bundle
+import android.webkit.WebView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -48,6 +49,12 @@ class MainActivity : TauriActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     immersive()
+  }
+
+  // The app lays itself out for the screen: ignore the system font size (it made the bars overflow).
+  override fun onWebViewCreate(webView: WebView) {
+    super.onWebViewCreate(webView)
+    webView.settings.textZoom = 100
   }
 
   override fun onResume() {

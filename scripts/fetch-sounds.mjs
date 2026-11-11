@@ -5,14 +5,21 @@ import { mkdirSync, writeFileSync, existsSync, statSync } from 'node:fs';
 
 const FONT = 'FluidR3_GM';
 const CORE = [
-  'acoustic_grand_piano', 'bright_acoustic_piano', 'electric_piano_1', 'electric_piano_2', 'harpsichord', 'clavinet',
-  'vibraphone', 'marimba', 'drawbar_organ', 'rock_organ', 'church_organ', 'accordion',
-  'acoustic_guitar_nylon', 'acoustic_guitar_steel', 'electric_guitar_clean', 'electric_guitar_jazz', 'overdriven_guitar', 'distortion_guitar',
-  'acoustic_bass', 'electric_bass_finger', 'slap_bass_1', 'synth_bass_1',
-  'violin', 'cello', 'string_ensemble_1', 'pizzicato_strings', 'orchestral_harp', 'choir_aahs',
-  'trumpet', 'trombone', 'brass_section', 'alto_sax', 'tenor_sax', 'clarinet', 'flute', 'pan_flute',
-  'lead_2_sawtooth', 'pad_2_warm', 'pad_1_new_age', 'sitar', 'kalimba', 'percussion',
+  'acoustic_grand_piano', 'electric_piano_1', 'drawbar_organ',
+  'acoustic_guitar_nylon', 'acoustic_guitar_steel', 'electric_guitar_clean', 'distortion_guitar',
+  'electric_bass_finger', 'violin', 'string_ensemble_1', 'choir_aahs',
+  'trumpet', 'alto_sax', 'flute', 'pad_2_warm', 'percussion',
 ];
+// The GM set has no drum kit in every font: try these folders for 'percussion'.
+const DRUM_FONTS = ['FluidR3_GM', 'MusyngKite', 'FatBoy'];
+const PCS = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+const midiOf = n => { const m = /^([A-G])(b|#)?(-?\d)$/.exec(n); return m ? (+m[3] + 1) * 12 + PCS[m[1]] + (m[2] === 'b' ? -1 : m[2] === '#' ? 1 : 0) : -1; };
+/** Keeps every third note (a minor third apart): the app re-pitches the nearest one, and the bundle stays small. */
+const slim = text => {
+  const entries = [...text.matchAll(/"([A-G][b#]?-?\d)"\s*:\s*"(data:audio\/[a-z0-9]+;base64,[A-Za-z0-9+/=]+)"/g)];
+  const keep = entries.filter(([, n]) => midiOf(n) % 3 === 0);
+  return `MIDI.Soundfont.x = {\n${keep.map(([, n, d]) => `"${n}": "${d}"`).join(',\n')}\n}\n`;
+};
 const ALL_URL = `https://gleitz.github.io/midi-js-soundfonts/${FONT}/names.json`;
 const BASES = [`https://gleitz.github.io/midi-js-soundfonts/${FONT}/`, `https://cdn.jsdelivr.net/gh/gleitz/midi-js-soundfonts@gh-pages/${FONT}/`];
 
@@ -25,13 +32,18 @@ for (const name of list) {
   const file = `${dir}/${name}-mp3.js`;
   if (existsSync(file) && statSync(file).size > 1000) { ok++; bytes += statSync(file).size; continue; }
   let done = false;
-  for (const base of BASES) {
+  const fonts = name === 'percussion' ? DRUM_FONTS : [FONT];
+  const urls = fonts.flatMap(f => BASES.map(b => b.replace(FONT, f) + `${name}-mp3.js`));
+  for (const url of urls) {
     try {
-      const res = await fetch(`${base}${name}-mp3.js`);
+      const res = await fetch(url);
       if (!res.ok) continue;
       const text = await res.text();
       if (!text.includes('data:audio')) continue;
-      writeFileSync(file, text); ok++; bytes += text.length; done = true; break;
+      const out = name === 'percussion' ? text : slim(text);
+      writeFileSync(file, out); ok++; bytes += out.length; done = true;
+      console.log(`  ${name}: ${(out.length / 1e6).toFixed(2)} MB from ${url.split('/').slice(-2, -1)[0]}`);
+      break;
     } catch { /* next source */ }
   }
   if (!done) console.warn(`  ! ${name}: not available (it will download on first use instead)`);

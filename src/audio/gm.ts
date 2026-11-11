@@ -77,7 +77,9 @@ async function fetchText(file: string): Promise<string> {
   let cache: Cache | null = null;
   try { cache = await caches.open(CACHE); const hit = await cache.match(SOURCES[1] + file); if (hit) return await hit.text(); } catch { cache = null; }
   let lastErr: unknown = null;
-  for (const base of SOURCES) {
+  // the drum kit isn't in every font: also look in the other midi-js-soundfonts sets
+  const sources = file.startsWith('percussion') ? [...SOURCES, ...['MusyngKite', 'FatBoy'].flatMap(f => SOURCES.slice(1).map(s => s.replace(GM_FONT, f)))] : SOURCES;
+  for (const base of sources) {
     if (base.startsWith('./') && location.protocol === 'file:') continue; // no bundled sounds next to a local file
     try {
       const res = await fetch(base + file);

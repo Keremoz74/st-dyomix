@@ -1187,10 +1187,16 @@ export class TracksArea {
       g.save();
       g.globalAlpha = (dim ? 0.45 : 1) * (store.ui.showAuto ? 0.55 : 1);
       g.beginPath(); g.roundRect(x, y, Math.max(2, rw), rh, 4); g.clip();
-      g.fillStyle = col + (sel ? '70' : '42'); g.fillRect(x, y, rw, rh);
+      // body: soft vertical gradient in the track colour (deeper when selected)
+      const body = g.createLinearGradient(0, y, 0, y + rh);
+      body.addColorStop(0, col + (sel ? '80' : '4a')); body.addColorStop(1, col + (sel ? '58' : '26'));
+      g.fillStyle = body; g.fillRect(x, y, rw, rh);
       const headH = rh >= 34 ? 15 : 0;
       if (headH) {
-        g.fillStyle = col; g.fillRect(x, y, rw, headH);
+        const hd = g.createLinearGradient(0, y, 0, y + headH);
+        hd.addColorStop(0, col); hd.addColorStop(1, col + 'd8');
+        g.fillStyle = hd; g.fillRect(x, y, rw, headH);
+        g.fillStyle = '#ffffff30'; g.fillRect(x, y, rw, 1);
         g.fillStyle = '#111214'; g.font = '600 11px Inter, system-ui, sans-serif'; g.textBaseline = 'middle';
         g.fillText((r.muted ? '● ' : '') + (r.session ? '✦ ' : '') + (r.pattern ? '▦ ' : '') + (r.flex?.on ? '⇿ ' : '') + (isFolder(r) ? `⧉ ${r.takes!.length} takes · ` : '') + r.name + (r.gain ? `  ${r.gain > 0 ? '+' : ''}${r.gain.toFixed(1)} dB` : ''), Math.max(x, 0) + 5, y + headH / 2 + 0.5);
       }

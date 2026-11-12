@@ -174,7 +174,31 @@ export function channelStrip(cmd: Commands, track: Track | null, opts: { selecte
     } else sendSlots.push(h('div', { class: 'st-slot st-empty' + (canSend ? '' : ' st-blank') }));
   }
 
+  // EQ thumbnail (Logic style): shows the first EQ's curve; tap opens it, or adds a Pro EQ
+  const eqIns = () => (track ? track.inserts : store.project.masterInserts).find(i => i.type === 'peq' || i.type === 'eq' || i.type === 'geq' || i.type === 'veq');
+  const owner0 = track ? track.id : 'master';
+  const eqCv = h('canvas', { class: 'st-eqthumb', 'aria-label': 'EQ: tap to open', role: 'button', tabindex: '0' }) as HTMLCanvasElement;
+  eqCv.addEventListener('click', () => { const e = eqIns(); if (e) cmd.togglePlugin(owner0, e.id); else { cmd.addPlugin(owner0, 'peq'); } });
+  const fq = new Float32Array(64).map((_, i) => 20 * Math.pow(1000, i / 63)), mg = new Float32Array(64), ph = new Float32Array(64);
+  let eqTick = 0;
+  const drawEqThumb = () => {
+    const w = eqCv.clientWidth, hh = eqCv.clientHeight; if (!w) return;
+    const dpr = devicePixelRatio || 1;
+    if (eqCv.width !== Math.round(w * dpr)) { eqCv.width = Math.round(w * dpr); eqCv.height = Math.round(hh * dpr); }
+    const g = eqCv.getContext('2d')!; g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.fillStyle = '#0d0e11'; g.fillRect(0, 0, w, hh);
+    g.fillStyle = '#ffffff10'; g.fillRect(0, hh / 2, w, 1);
+    const e = eqIns(), inst = e ? engine.plugin(owner0, e.id) : undefined;
+    if (!e || !inst?.eqNodes?.length) { g.fillStyle = '#5d6068'; g.font = '700 9px Inter, sans-serif'; g.textAlign = 'center'; g.fillText('EQ', w / 2, hh / 2 + 3); g.textAlign = 'left'; return; }
+    const tot = new Float32Array(64).fill(1);
+    for (const n of inst.eqNodes) { n.getFrequencyResponse(fq, mg, ph); for (let i = 0; i < 64; i++) tot[i] *= mg[i]; }
+    g.beginPath();
+    for (let i = 0; i < 64; i++) { const x = i / 63 * w, y = hh / 2 - Math.max(-18, Math.min(18, 20 * Math.log10(tot[i] || 1e-6))) / 18 * (hh / 2 - 2); i ? g.lineTo(x, y) : g.moveTo(x, y); }
+    g.strokeStyle = e.bypass ? '#6a6d75' : '#6fb6ff'; g.lineWidth = 1.4; g.stroke();
+    g.lineTo(w, hh / 2); g.lineTo(0, hh / 2); g.closePath(); g.fillStyle = e.bypass ? '#6a6d7520' : '#4c9aff2a'; g.fill();
+  };
   const el = h('div', { class: 'strip' + (opts.selected ? ' selected' : '') },
+    eqCv,
     track?.instrument
       ? (() => { const b: HTMLButtonElement = h('button', { class: 'st-slot st-inst', title: 'Open instrument (right-click to change it)', 'aria-label': `Open instrument on ${track.name}`, onClick: () => cmd.togglePlugin(track.id, 'inst') }, track.instrument.type === 'wam' ? track.instrument.wam?.name ?? 'Plug-in' : track.instrument.preset);
           b.addEventListener('contextmenu', e => { e.preventDefault(); openMenu(b, instrumentMenu(cmd, track.id)); }); return b; })()
@@ -211,6 +235,7 @@ export function channelStrip(cmd: Commands, track: Track | null, opts: { selecte
   );
 
   const meter = () => {
+    if (++eqTick % 12 === 1) drawEqThumb();
     const [l, r] = engine.levels(track ? track.id : 'master');
     mL.style.height = `${levelToH(l)}px`; mR.style.height = `${levelToH(r)}px`;
     const p = Math.max(l, r);

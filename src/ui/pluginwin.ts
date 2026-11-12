@@ -1,5 +1,6 @@
 // Floating plug-in window with knobs, EQ curve and compressor gain-reduction meter.
 import { EqEditor } from './eqeditor';
+import { PluginView, viewKind, KIND_COLOR } from './plugview';
 import { Insert } from '../model';
 import { Commands } from '../commands';
 import { PLUGINS, ParamDef, fmtParam, toNorm, fromNorm, defaultParams } from '../audio/plugins';
@@ -92,13 +93,21 @@ export class PluginWindow {
   private grText: HTMLElement | null = null;
   private knobs: { show: () => void }[] = [];
   private eqx: EqEditor | null = null;
+  private view: PluginView | null = null;
+  private ab: { cur: 'A' | 'B'; other: Record<string, number> | null } = { cur: 'A', other: null };
   private pos: { x: number; y: number } | null = null;
 
   constructor(private cmd: Commands) {
+    // shared knob shading (metal cap) used by the pro plug-in windows
+    if (!document.getElementById('knobGrad')) {
+      const d = document.createElement('div');
+      d.innerHTML = '<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><radialGradient id="knobGrad" cx="40%" cy="30%" r="75%"><stop offset="0" stop-color="#5b5e66"/><stop offset=".55" stop-color="#34363c"/><stop offset="1" stop-color="#1f2024"/></radialGradient></defs></svg>';
+      document.body.appendChild(d.firstChild!);
+    }
     onBankState(() => this.libStatus?.());
     cmd.store.on(k => {
       if (!this.el) return;
-      if (k === 'fx' || k === 'mix') this.knobs.forEach(kn => kn.show());
+      if (k === 'fx' || k === 'mix') { this.knobs.forEach(kn => kn.show()); this.view?.paramsChanged(); }
       if (k === 'view') this.nativeStatus?.();
       if (k === 'structure') {
         const ins = this.ins();
@@ -123,11 +132,12 @@ export class PluginWindow {
   /** True when this plug-in's window is the one showing. */
   isShowing(owner: string, insId: string) { return !!this.el && this.owner === owner && this.insId === insId; }
   open(owner: string, insId: string) {
+    if (owner !== this.owner || insId !== this.insId) this.ab = { cur: 'A', other: null };
     this.owner = owner; this.insId = insId; this.shownKey = '';
     this.render();
   }
 
-  close() { this.nativeStatus = null; this.libStatus = null; this.dropWamGui(); this.el?.remove(); this.el = null; this.canvas = null; this.grFill = null; this.eqx = null; }
+  close() { this.nativeStatus = null; this.libStatus = null; this.dropWamGui(); this.el?.remove(); this.el = null; this.canvas = null; this.grFill = null; this.eqx = null; this.view?.detach(); this.view = null; }
 
   private wamGui: { el: Element; inst: any } | null = null;
   private shownKey = '';
@@ -183,7 +193,7 @@ export class PluginWindow {
 
   private render() {
     const ins = this.ins(); if (!ins) return;
-    this.eqx = null;
+    this.eqx = null; this.view?.detach(); this.view = null;
     this.dropWamGui();
     if (this.insId === 'inst') {
       const t = this.cmd.store.track(this.owner)!;
@@ -210,26 +220,32 @@ export class PluginWindow {
       this.eqx = ed; viz = ed.el; knobArea = ed.panel;
       this.knobs = [{ show: () => ed.show() }];
     } else {
-      this.knobs = def.params.map(p => control(this.cmd, this.owner, ins, p));
-      knobArea = h('div', { class: 'pw-knobs' }, this.knobs.map(k => (k as any).el));
+      // pro layout: live display + meters, main controls, and an output section
+      const OUT = new Set(['mix', 'output', 'out', 'level', 'makeup', 'master', 'ceiling']);
+      const ctls = def.params.map(p => ({ p, c: control(this.cmd, this.owner, ins, p) }));
+      this.knobs = ctls.map(x => x.c);
+      const main = ctls.filter(x => !OUT.has(x.p.id)), outs = ctls.filter(x => OUT.has(x.p.id));
+      knobArea = h('div', { class: 'pw-controls' },
+        h('div', { class: 'pw-section' }, h('div', { class: 'pw-sec-title' }, 'Controls'), h('div', { class: 'pw-knobs' }, main.map(x => (x.c as any).el))),
+        outs.length ? h('div', { class: 'pw-section pw-sec-out' }, h('div', { class: 'pw-sec-title' }, 'Output'), h('div', { class: 'pw-knobs' }, outs.map(x => (x.c as any).el))) : null);
+      if (ins.type !== 'analyzer') { this.view = new PluginView(ins, viewKind(ins.type), () => ins.params); viz = this.view.el; }
     }
-    if (ins.type === 'geq' || ins.type === 'veq') { this.canvas = h('canvas', { class: 'pw-eq', 'aria-label': 'EQ curve' }); viz = this.canvas; }
     if (ins.type === 'analyzer') { this.canvas = h('canvas', { class: 'pw-eq pw-spec', 'aria-label': 'Spectrum' }); viz = this.canvas; }
-    if (ins.type === 'transient') { /* gain-change display */ }
-    if (ins.type === 'comp' || ins.type === 'limiter' || ins.type === 'gate' || ins.type === 'deesser' || ins.type === 'multi') {
-      this.grFill = h('div', { class: 'pw-gr-fill' }); this.grText = h('span', { class: 'pw-gr-val' }, '0.0 dB');
-      viz = h('div', { class: 'pw-gr' }, h('span', { class: 'pw-gr-label' }, 'Gain Reduction'), h('div', { class: 'pw-gr-bar' }, this.grFill), this.grText);
-    }
+    const kind = ins.type === 'peq' || ins.type === 'eq' ? 'spectrum' : viewKind(ins.type);
+    const accent = KIND_COLOR[kind];
+    const abBtn = (l: 'A' | 'B') => h('button', { class: `pw-ab${this.ab.cur === l ? ' on' : ''}`, title: 'Compare two settings (A/B)', 'aria-pressed': String(this.ab.cur === l), onClick: () => this.switchAB(ins, l) }, l);
     const head = h('div', { class: 'pw-head' },
       h('span', { class: 'pw-dot', style: { background: color } }),
-      h('span', { class: 'pw-title' }, `${ownerName} · ${def.name}`),
+      h('div', { class: 'pw-titles' }, h('span', { class: 'pw-title' }, def.name), h('span', { class: 'pw-sub' }, `${ownerName} · ${def.category ?? ''}`)),
       h('span', { class: 'grow' }),
+      h('div', { class: 'pw-abwrap' }, abBtn('A'), abBtn('B')),
       (() => { const b: HTMLButtonElement = h('button', { class: 'pw-btn pw-preset', 'aria-haspopup': 'menu', title: 'Presets and settings', onClick: () => openMenu(b, this.presetMenu(ins)) }, this.presetLabel(ins), icon('chevron', 10)); return b; })(),
-      h('button', { class: 'pw-btn' + (ins.bypass ? '' : ' on'), 'aria-pressed': String(!ins.bypass), title: ins.bypass ? 'Enable' : 'Bypass', 'aria-label': ins.bypass ? 'Enable plug-in' : 'Bypass plug-in', onClick: () => this.cmd.toggleBypass(this.owner, ins.id) }, icon('power', 14)),
+      h('button', { class: 'pw-btn pw-power' + (ins.bypass ? '' : ' on'), 'aria-pressed': String(!ins.bypass), title: ins.bypass ? 'Enable' : 'Bypass', 'aria-label': ins.bypass ? 'Enable plug-in' : 'Bypass plug-in', onClick: () => this.cmd.toggleBypass(this.owner, ins.id) }, icon('power', 14)),
       h('button', { class: 'pw-btn', title: 'Remove plug-in', 'aria-label': 'Remove plug-in', onClick: () => this.cmd.removePlugin(this.owner, ins.id) }, 'Remove'),
       h('button', { class: 'pw-btn', title: 'Close', 'aria-label': 'Close plug-in window', onClick: () => this.close() }, '×'));
-    const win = h('div', { class: 'plugin-win' + (ins.bypass ? ' bypassed' : '') + (this.eqx ? ' eq-win' : ''), role: 'dialog', 'aria-label': `${def.name} on ${ownerName}` },
+    const win = h('div', { class: 'plugin-win pro-win' + (ins.bypass ? ' bypassed' : '') + (this.eqx ? ' eq-win' : ''), role: 'dialog', 'aria-label': `${def.name} on ${ownerName}` },
       head, viz, knobArea);
+    win.style.setProperty('--pw-accent', accent);
     this.mount(win, head);
   }
 
@@ -314,8 +330,12 @@ export class PluginWindow {
     const sampleBar = inst.type === 'sampler' ? h('div', { class: 'pw-sample' },
       h('span', { class: 'pw-sample-name' }, inst.sampleName ? `Sample: ${inst.sampleName}` : 'No sample loaded. Load one or drop an audio file here.'),
       h('button', { class: 'pw-btn', onClick: () => this.cmd.pickSample(t.id) }, 'Load Sample…')) : null;
-    const win = h('div', { class: 'plugin-win inst-win', role: 'dialog', 'aria-label': `${def.name} on ${t.name}` },
-      head, libStatus, sampleBar, h('div', { class: 'pw-knobs' }, this.knobs.map(k => (k as any).el)));
+    this.view = new PluginView(null, 'synth', () => inst.params);
+    const win = h('div', { class: 'plugin-win pro-win inst-win', role: 'dialog', 'aria-label': `${def.name} on ${t.name}`},
+      head, libStatus, sampleBar, this.view.el,
+      h('div', { class: 'pw-controls' }, h('div', { class: 'pw-section' }, h('div', { class: 'pw-sec-title' }, 'Sound'), h('div', { class: 'pw-knobs' }, this.knobs.map(k => (k as any).el)))),
+      this.keyboard(t.id));
+    win.style.setProperty('--pw-accent', KIND_COLOR.synth);
     if (inst.type === 'sampler') {
       win.addEventListener('dragover', e => { e.preventDefault(); win.classList.add('drop'); });
       win.addEventListener('dragleave', () => win.classList.remove('drop'));
@@ -342,9 +362,52 @@ export class PluginWindow {
     });
   }
 
+  /** Playable on-screen keyboard (two octaves, octave buttons, multi-touch). */
+  private kbOct = 4;
+  private keyboard(trackId: string) {
+    const eng = this.cmd.engine, held = new Map<number, number>();
+    const keys = h('div', { class: 'pk-keys' });
+    const label = h('span', { class: 'pk-oct' });
+    const build = () => {
+      keys.replaceChildren();
+      const base = (this.kbOct + 1) * 12;
+      label.textContent = `C${this.kbOct}–B${this.kbOct + 1}`;
+      const whites: number[] = [], blacks: number[] = [];
+      for (let n = base; n < base + 24; n++) ([1, 3, 6, 8, 10].includes(n % 12) ? blacks : whites).push(n);
+      whites.forEach(n => keys.appendChild(h('div', { class: 'pk-w', 'data-n': String(n) }, n % 12 === 0 ? h('span', {}, `C${Math.floor(n / 12) - 1}`) : null)));
+      blacks.forEach(n => { const wi = whites.findIndex(w => w > n); keys.appendChild(h('div', { class: 'pk-b', 'data-n': String(n), style: { left: `calc(${(wi / whites.length) * 100}% - ${100 / whites.length / 3}%)`, width: `${(100 / whites.length) * 0.62}%` } })); });
+    };
+    const noteAt = (e: PointerEvent) => { const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null; const n = el?.closest<HTMLElement>('[data-n]')?.dataset.n; return n ? +n : null; };
+    const on = (id: number, n: number, y: number, el: Element) => {
+      const r = el.getBoundingClientRect(), vel = Math.round(50 + 77 * Math.min(1, Math.max(0, (y - r.top) / r.height)));
+      held.set(id, n); eng.noteOn(trackId, n, vel); keys.querySelector(`[data-n="${n}"]`)?.classList.add('down');
+    };
+    const off = (id: number) => { const n = held.get(id); if (n == null) return; held.delete(id); eng.noteOff(trackId, n); if (![...held.values()].includes(n)) keys.querySelector(`[data-n="${n}"]`)?.classList.remove('down'); };
+    keys.addEventListener('pointerdown', e => { e.preventDefault(); keys.setPointerCapture(e.pointerId); const n = noteAt(e); if (n != null) on(e.pointerId, n, e.clientY, keys.querySelector(`[data-n="${n}"]`)!); });
+    keys.addEventListener('pointermove', e => { if (!held.has(e.pointerId)) return; const n = noteAt(e); if (n != null && n !== held.get(e.pointerId)) { off(e.pointerId); on(e.pointerId, n, e.clientY, keys.querySelector(`[data-n="${n}"]`)!); } });
+    const up = (e: PointerEvent) => off(e.pointerId);
+    keys.addEventListener('pointerup', up); keys.addEventListener('pointercancel', up);
+    build();
+    return h('div', { class: 'pk' },
+      h('div', { class: 'pk-bar' }, h('button', { class: 'pw-btn', 'aria-label': 'Octave down', onClick: () => { this.kbOct = Math.max(0, this.kbOct - 1); build(); } }, '◀'), label, h('button', { class: 'pw-btn', 'aria-label': 'Octave up', onClick: () => { this.kbOct = Math.min(7, this.kbOct + 1); build(); } }, '▶')),
+      keys);
+  }
+
+  /** A/B compare: keeps a second set of settings; switching swaps them. */
+  private switchAB(ins: Insert, l: 'A' | 'B') {
+    if (this.ab.cur === l) return;
+    const now = { ...ins.params };
+    if (this.ab.other) this.cmd.applyPluginPreset(this.owner, ins.id, this.ab.other);
+    this.ab = { cur: l, other: now };
+    this.el?.querySelectorAll('.pw-ab').forEach(b => { const on = b.textContent === l; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
+    toast(this.ab.other && l === 'B' && JSON.stringify(now) === JSON.stringify(ins.params) ? 'B starts as a copy of A: change it, then switch to compare' : `Setting ${l}`);
+  }
+
   frame() {
     if (!this.el) return;
+    if (this.insId === 'inst' && this.view) { this.view.attach(undefined, this.cmd.engine.trackInput(this.owner), this.cmd.engine.trackInput(this.owner)); this.view.frame(); return; }
     const inst = this.cmd.engine.plugin(this.owner, this.insId);
+    if (this.view) { this.view.attach(inst); this.view.frame(); return; }
     if (this.eqx) { this.eqx.draw(inst as never); return; }
     if (this.canvas && inst?.eqNodes) this.drawEq(inst.eqNodes);
     if (this.canvas && inst?.analyser) this.drawSpectrum(inst.analyser);

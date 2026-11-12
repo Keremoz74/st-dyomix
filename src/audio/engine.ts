@@ -329,6 +329,8 @@ export class Engine {
     for (const s of this.strips.values()) send(instrumentInstance(s.pre));
   }
 
+  /** A track's channel input (where its instrument / audio enters): used by instrument displays. */
+  trackInput(id: string): AudioNode | undefined { return this.strips.get(id)?.input; }
   plugin(owner: string | 'master', insertId: string): PluginInstance | undefined {
     return owner === 'master' ? this.masterChain.fx.get(insertId) : this.strips.get(owner)?.fx.get(insertId);
   }

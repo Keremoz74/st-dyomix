@@ -69,23 +69,27 @@ const EQ: PluginDef = {
     { id: 'midQ', label: 'Mid Q', min: 0.3, max: 8, def: 1, unit: '', log: true },
     { id: 'highGain', label: 'High', min: -18, max: 18, def: 0, unit: 'dB', step: 0.5 },
     { id: 'highFreq', label: 'High Freq', min: 2000, max: 16000, def: 8000, unit: 'Hz', log: true },
+    { id: 'lpf', label: 'High Cut', min: 1000, max: 20000, def: 20000, unit: 'Hz', log: true },
   ],
   create(ctx) {
     const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.Q.value = 0.707;
     const lo = ctx.createBiquadFilter(); lo.type = 'lowshelf';
     const mid = ctx.createBiquadFilter(); mid.type = 'peaking';
     const hi = ctx.createBiquadFilter(); hi.type = 'highshelf';
-    hp.connect(lo); lo.connect(mid); mid.connect(hi);
-    const an = ctx.createAnalyser(); an.fftSize = 4096; an.smoothingTimeConstant = 0.82; an.minDecibels = -96; an.maxDecibels = -6; hi.connect(an);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 0;
+    hp.connect(lo); lo.connect(mid); mid.connect(hi); hi.connect(lp);
+    const an = ctx.createAnalyser(); an.fftSize = 4096; an.smoothingTimeConstant = 0.82; an.minDecibels = -96; an.maxDecibels = -6; lp.connect(an);
     return {
-      input: hp, output: hi, eqNodes: [hp, lo, mid, hi], analyser: an,
+      input: hp, output: lp, eqNodes: [hp, lo, mid, hi, lp], analyser: an,
       set(p) {
         ramp(hp.frequency, p.hpf <= 20.5 ? 10 : p.hpf, ctx);
         ramp(lo.gain, p.lowGain, ctx); ramp(lo.frequency, p.lowFreq, ctx);
         ramp(mid.gain, p.midGain, ctx); ramp(mid.frequency, p.midFreq, ctx); ramp(mid.Q, p.midQ, ctx);
         ramp(hi.gain, p.highGain, ctx); ramp(hi.frequency, p.highFreq, ctx);
+        const lpf = p.lpf ?? 20000;
+        ramp(lp.frequency, lpf >= 19900 ? Math.min(22000, ctx.sampleRate / 2 - 10) : lpf, ctx);
       },
-      dispose() { [hp, lo, mid, hi, an].forEach(n => n.disconnect()); },
+      dispose() { [hp, lo, mid, hi, lp, an].forEach(n => n.disconnect()); },
     };
   },
 };

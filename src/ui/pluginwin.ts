@@ -196,6 +196,8 @@ export class PluginWindow {
       return this.renderWam(ins, this.owner === 'master' ? 'Stereo Out' : store.track(this.owner)?.name ?? '', this.owner === 'master' ? '#9aa0aa' : store.track(this.owner)?.color ?? '#9aa0aa');
     }
     const def = PLUGINS[ins.type];
+    // projects saved before a plug-in gained a parameter: fill it with its default
+    for (const [k, v] of Object.entries(defaultParams(ins.type))) if (ins.params[k] == null) ins.params[k] = v;
     const { store } = this.cmd;
     const ownerName = this.owner === 'master' ? 'Stereo Out' : store.track(this.owner)?.name ?? '';
     const color = this.owner === 'master' ? '#9aa0aa' : store.track(this.owner)?.color ?? '#9aa0aa';

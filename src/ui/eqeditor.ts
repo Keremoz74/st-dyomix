@@ -62,6 +62,7 @@ export class EqEditor {
       { i: 1, color: BAND_COLORS[2], label: 'L', type: 1, f: 'lowFreq', g: 'lowGain' },
       { i: 2, color: BAND_COLORS[4], label: 'M', type: 0, f: 'midFreq', g: 'midGain', q: 'midQ' },
       { i: 3, color: BAND_COLORS[6], label: 'H', type: 2, f: 'highFreq', g: 'highGain' },
+      { i: 4, color: BAND_COLORS[8], label: 'HC', type: 4, f: 'lpf' },
     ];
   }
   private def(id: string) { return PLUGINS[this.ins.type].params.find(x => x.id === id)!; }
@@ -79,7 +80,8 @@ export class EqEditor {
   private gOf = (y: number) => (this.H / 2 - y) / (this.H / 2 - 12) * this.range;
   private pointOf(b: Band) {
     const p = this.p(), f = p[b.f];
-    const x = this.ins.type === 'eq' && b.i === 0 && f <= 20.5 ? 4 : this.xOf(f);
+    const off = this.ins.type === 'eq' && ((b.i === 0 && f <= 20.5) || (b.i === 4 && (f ?? 20000) >= 19900));
+    const x = off ? (b.i === 0 ? 10 : this.W - 10) : this.xOf(f ?? 20000);
     return { x, y: b.g ? this.yOf(Math.max(-this.range, Math.min(this.range, p[b.g]))) : this.yOf(0) };
   }
   private hit(x: number, y: number): Band | null {
@@ -157,15 +159,23 @@ export class EqEditor {
     if (free == null) return null;
     this.cmd.store.checkpoint();
     const kk = bandKeys(free), f = this.fOf(x);
-    const type = f < 32 ? 3 : f > 15000 ? 4 : 0;
+    const type = f < 35 ? 3 : f > 14000 ? 4 : 0;
     this.set(kk.type, type); this.set(kk.f, f); this.set(kk.g, type === 0 ? this.gOf(y) : 0); this.set(kk.q, type === 0 ? 1 : 0.71); this.set(kk.s, 1);
     this.set(kk.on, 1);
     return this.bands().find(b => b.i === free) ?? null;
+  }
+  /** Adds a Low Cut (80 Hz) or High Cut (16 kHz) band, 24 dB/oct. */
+  private addCut(type: 3 | 4) {
+    const b = this.addBand(this.xOf(type === 3 ? 80 : 16000), this.yOf(0)); if (!b) return;
+    const kk = bandKeys(b.i);
+    this.set(kk.type, type); this.set(kk.f, type === 3 ? 80 : 16000); this.set(kk.g, 0); this.set(kk.q, 0.71); this.set(kk.s, 1);
+    this.select(b.i);
   }
   private removeOrReset(b: Band) {
     this.cmd.store.checkpoint();
     if (this.ins.type === 'peq') { this.set(b.on!, 0); this.select(this.bands()[0]?.i ?? -1); }
     else if (b.i === 0) this.set('hpf', 20);
+    else if (b.i === 4) this.set('lpf', 20000);
     else if (b.g) this.set(b.g, 0);
   }
   private bandMenu(b: Band, x: number, y: number) {
@@ -198,7 +208,9 @@ export class EqEditor {
     this.panelKey = key;
     const chips = h('div', { class: 'eqx-chips' },
       ...bands.map(b => h('button', { class: `eqx-chip${b.i === this.sel ? ' on' : ''}`, style: { borderColor: b.color, color: b.i === this.sel ? '#111214' : b.color, background: b.i === this.sel ? b.color : 'transparent' }, 'aria-label': `Band ${b.i + 1}: ${BAND_TYPES[b.type]}`, onClick: () => this.select(b.i) }, `${b.i + 1} ${BAND_TYPES[b.type]}`)),
-      bands.length < MAX_BANDS ? h('button', { class: 'eqx-chip eqx-add', onClick: () => { const b = this.addBand(this.xOf(1000), this.yOf(0)); if (b) this.select(b.i); } }, '+ Band') : null);
+      bands.length < MAX_BANDS ? h('button', { class: 'eqx-chip eqx-add', onClick: () => { const b = this.addBand(this.xOf(1000), this.yOf(0)); if (b) this.select(b.i); } }, '+ Band') : null,
+      bands.length < MAX_BANDS && !bands.some(b => b.type === 3) ? h('button', { class: 'eqx-chip eqx-add', title: 'Low Cut (high-pass): removes rumble below the frequency', onClick: () => this.addCut(3) }, '+ Low Cut') : null,
+      bands.length < MAX_BANDS && !bands.some(b => b.type === 4) ? h('button', { class: 'eqx-chip eqx-add', title: 'High Cut (low-pass): removes hiss and harshness above the frequency', onClick: () => this.addCut(4) }, '+ High Cut') : null);
     const ctls: { el: HTMLElement; show: () => void }[] = [];
     const b = bands.find(x => x.i === this.sel);
     if (b) {
@@ -263,7 +275,7 @@ export class EqEditor {
     const path = (tot: Float32Array) => { g.beginPath(); for (let i = 0; i < tot.length; i++) { const x = this.xOf(this.freqs[i]), y = this.yOf(Math.max(-this.range - 6, Math.min(this.range + 6, 20 * Math.log10(tot[i] || 1e-6)))); i ? g.lineTo(x, y) : g.moveTo(x, y); } };
     for (const b of bands) {
       const nodes = nodesOf(b); if (!nodes.length) continue;
-      if (this.ins.type === 'eq' && b.i === 0 && this.p().hpf <= 20.5) continue;
+      if (this.ins.type === 'eq' && ((b.i === 0 && this.p().hpf <= 20.5) || (b.i === 4 && (this.p().lpf ?? 20000) >= 19900))) continue;
       path(resp(nodes));
       if (b.i === this.sel) { g.lineTo(w, this.yOf(0)); g.lineTo(0, this.yOf(0)); g.closePath(); g.fillStyle = b.color + '30'; g.fill(); }
       else { g.strokeStyle = b.color + '66'; g.lineWidth = 1; g.stroke(); }

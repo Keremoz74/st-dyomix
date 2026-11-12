@@ -45,6 +45,8 @@ jobs:
             args: ''
             rust_targets: ''
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -102,6 +104,22 @@ jobs:
             src-tauri/target/**/release/bundle/nsis/*.exe
             src-tauri/target/**/release/bundle/appimage/*.AppImage
             src-tauri/target/**/release/bundle/deb/*.deb
+      # installers also go to a branch per platform (mac / windows), so they can be fetched with git
+      - name: Publish installer to a branch
+        if: matrix.name != 'Linux'
+        shell: bash
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BR: ${{ matrix.name == 'macOS' && 'mac' || 'windows' }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/inst"
+          find src-tauri/target -path '*release/bundle/dmg/*.dmg' -exec cp {} "$RUNNER_TEMP/inst/" \;
+          find src-tauri/target -path '*release/bundle/nsis/*.exe' -exec cp {} "$RUNNER_TEMP/inst/" \;
+          cd "$RUNNER_TEMP/inst" && ls -la
+          git init -q -b "$BR"
+          git add .
+          git -c user.name="github-actions" -c user.email="actions@github.com" commit -qm "${BR} installer from ${GITHUB_SHA::7}"
+          git push -f "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$BR"
           if-no-files-found: warn
 
   android:

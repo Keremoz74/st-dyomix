@@ -4,8 +4,9 @@
 import { MORE_PLUGINS, MoreType } from './plugins2';
 import { THIRD_PLUGINS, ThirdType } from './plugins3';
 import { FOURTH_PLUGINS, FourthType } from './plugins4';
+import { PRO_EQ } from './proeq';
 
-export type PluginType = 'eq' | 'comp' | 'reverb' | 'delay' | 'chorus' | 'drive' | 'limiter' | 'tremolo' | 'autofilter' | MoreType | ThirdType | FourthType | 'wam' | 'native';
+export type PluginType = 'eq' | 'comp' | 'reverb' | 'delay' | 'chorus' | 'drive' | 'limiter' | 'tremolo' | 'autofilter' | MoreType | ThirdType | FourthType | 'peq' | 'wam' | 'native';
 
 export interface ParamDef {
   id: string;
@@ -75,15 +76,16 @@ const EQ: PluginDef = {
     const mid = ctx.createBiquadFilter(); mid.type = 'peaking';
     const hi = ctx.createBiquadFilter(); hi.type = 'highshelf';
     hp.connect(lo); lo.connect(mid); mid.connect(hi);
+    const an = ctx.createAnalyser(); an.fftSize = 4096; an.smoothingTimeConstant = 0.82; an.minDecibels = -96; an.maxDecibels = -6; hi.connect(an);
     return {
-      input: hp, output: hi, eqNodes: [hp, lo, mid, hi],
+      input: hp, output: hi, eqNodes: [hp, lo, mid, hi], analyser: an,
       set(p) {
         ramp(hp.frequency, p.hpf <= 20.5 ? 10 : p.hpf, ctx);
         ramp(lo.gain, p.lowGain, ctx); ramp(lo.frequency, p.lowFreq, ctx);
         ramp(mid.gain, p.midGain, ctx); ramp(mid.frequency, p.midFreq, ctx); ramp(mid.Q, p.midQ, ctx);
         ramp(hi.gain, p.highGain, ctx); ramp(hi.frequency, p.highFreq, ctx);
       },
-      dispose() { [hp, lo, mid, hi].forEach(n => n.disconnect()); },
+      dispose() { [hp, lo, mid, hi, an].forEach(n => n.disconnect()); },
     };
   },
 };
@@ -345,8 +347,8 @@ COMP.presets = {
 REVERB.presets = { 'Small Room': { decay: 0.7, predelay: 5, tone: 6000, mix: 18 }, 'Big Hall': { decay: 3.5, predelay: 30, tone: 8000, mix: 30 }, 'Dark Ambience': { decay: 5, predelay: 60, tone: 2500, mix: 35 } };
 for (const d of [...MORE_PLUGINS, ...THIRD_PLUGINS, ...FOURTH_PLUGINS]) d.category = d.category ?? 'Utility';
 
-export const PLUGINS = Object.fromEntries([EQ, COMP, REVERB, DELAY, CHORUS, DRIVE, LIMITER, TREMOLO, AUTOFILTER, ...MORE_PLUGINS, ...THIRD_PLUGINS, ...FOURTH_PLUGINS].map(d => [d.type, d])) as Record<PluginType, PluginDef>;
-export const PLUGIN_LIST: PluginDef[] = [EQ, GEQ(), COMP, LIMITER, ...MORE_PLUGINS.filter(d => d.type !== 'geq'), REVERB, DELAY, CHORUS, DRIVE, TREMOLO, AUTOFILTER, ...THIRD_PLUGINS, ...FOURTH_PLUGINS];
+export const PLUGINS = Object.fromEntries([EQ, COMP, REVERB, DELAY, CHORUS, DRIVE, LIMITER, TREMOLO, AUTOFILTER, ...MORE_PLUGINS, ...THIRD_PLUGINS, ...FOURTH_PLUGINS, PRO_EQ].map(d => [d.type, d])) as Record<PluginType, PluginDef>;
+export const PLUGIN_LIST: PluginDef[] = [PRO_EQ, EQ, GEQ(), COMP, LIMITER, ...MORE_PLUGINS.filter(d => d.type !== 'geq'), REVERB, DELAY, CHORUS, DRIVE, TREMOLO, AUTOFILTER, ...THIRD_PLUGINS, ...FOURTH_PLUGINS];
 function GEQ() { return MORE_PLUGINS.find(d => d.type === 'geq')!; }
 /** Logic's plug-in menu order. */
 export const CATEGORIES = ['EQ', 'Dynamics', 'Reverb', 'Delay', 'Modulation', 'Distortion', 'Amps & Pedals', 'Filter', 'Pitch', 'Imaging', 'Metering', 'Utility'];

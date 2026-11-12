@@ -584,3 +584,22 @@ button.hdr-icon:hover { filter: brightness(1.3); }
 .lm-bar.compact .tool-btn .short { display: inline; }
 .control-bar.compact .cb-master-label { display: none; }
 @media (pointer: coarse) and (max-width: 1400px) { .inspector { width: 232px; } }
+
+/* point-and-drag EQ (ui/eqeditor.ts) */
+.plugin-win.eq-win { width: 720px; }
+.eqx { padding: 10px 10px 0; }
+.eqx-canvas { display: block; width: 100%; height: 300px; border-radius: 8px; touch-action: none; cursor: crosshair; background: #121316; }
+.eqx-hint { color: var(--muted); font-size: 11px; padding: 6px 2px 0; }
+.eqx-panel { padding: 8px 10px 12px; }
+.eqx-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.eqx-chip { border: 1.5px solid; border-radius: 14px; padding: 3px 10px; font: 600 11px Inter, sans-serif; background: transparent; cursor: pointer; min-height: 28px; }
+.eqx-add { border-color: var(--line2) !important; color: var(--text) !important; }
+.eqx-knobs { padding: 4px 0 0 !important; }
+.eqx-sep { width: 1px; align-self: stretch; background: var(--line); margin: 0 6px; }
+.eqx-actions { display: flex; justify-content: flex-end; padding-top: 4px; }
+@media (max-height: 820px) { .eqx-canvas { height: 230px; } }
+@media (max-height: 500px) { .eqx-canvas { height: 160px; } }
+@media (pointer: coarse) { .eqx-chip { min-height: 34px; padding: 4px 12px; } }
+.pw-knobs.eqx-knobs { display: flex !important; flex-wrap: wrap; gap: 4px 14px; align-items: flex-start; justify-content: flex-start; grid-template-columns: none; }
+.eqx-knobs > * { flex: none; }
+.eqx-knobs .eqx-sep { height: 70px; align-self: center; }

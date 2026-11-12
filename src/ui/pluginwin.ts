@@ -1,4 +1,5 @@
 // Floating plug-in window with knobs, EQ curve and compressor gain-reduction meter.
+import { EqEditor } from './eqeditor';
 import { Insert } from '../model';
 import { Commands } from '../commands';
 import { PLUGINS, ParamDef, fmtParam, toNorm, fromNorm, defaultParams } from '../audio/plugins';
@@ -90,6 +91,7 @@ export class PluginWindow {
   private grFill: HTMLElement | null = null;
   private grText: HTMLElement | null = null;
   private knobs: { show: () => void }[] = [];
+  private eqx: EqEditor | null = null;
   private pos: { x: number; y: number } | null = null;
 
   constructor(private cmd: Commands) {
@@ -125,7 +127,7 @@ export class PluginWindow {
     this.render();
   }
 
-  close() { this.nativeStatus = null; this.libStatus = null; this.dropWamGui(); this.el?.remove(); this.el = null; this.canvas = null; this.grFill = null; }
+  close() { this.nativeStatus = null; this.libStatus = null; this.dropWamGui(); this.el?.remove(); this.el = null; this.canvas = null; this.grFill = null; this.eqx = null; }
 
   private wamGui: { el: Element; inst: any } | null = null;
   private shownKey = '';
@@ -165,7 +167,7 @@ export class PluginWindow {
       !instrumentTrack ? h('button', { class: 'pw-btn', title: 'Remove plug-in', 'aria-label': 'Remove plug-in', onClick: () => this.cmd.removePlugin(this.owner, ins.id) }, 'Remove') : null,
       h('button', { class: 'pw-btn', title: 'Close', 'aria-label': 'Close plug-in window', onClick: () => this.close() }, '×'));
     const win = h('div', { class: 'plugin-win wam-win' + (ins.bypass ? ' bypassed' : ''), role: 'dialog', 'aria-label': `${ref.name} on ${ownerName}` }, head, body);
-    this.knobs = []; this.canvas = null; this.grFill = null; this.grText = null;
+    this.knobs = []; this.canvas = null; this.grFill = null; this.grText = null; this.eqx = null;
     this.mount(win, head);
     const p: Promise<any> | undefined = instrumentTrack ? this.cmd.engine.wamInstrument(instrumentTrack) : (this.cmd.engine.plugin(this.owner, ins.id) as any)?.wam;
     const key = this.insId + this.owner;
@@ -181,6 +183,7 @@ export class PluginWindow {
 
   private render() {
     const ins = this.ins(); if (!ins) return;
+    this.eqx = null;
     this.dropWamGui();
     if (this.insId === 'inst') {
       const t = this.cmd.store.track(this.owner)!;
@@ -196,10 +199,19 @@ export class PluginWindow {
     const { store } = this.cmd;
     const ownerName = this.owner === 'master' ? 'Stereo Out' : store.track(this.owner)?.name ?? '';
     const color = this.owner === 'master' ? '#9aa0aa' : store.track(this.owner)?.color ?? '#9aa0aa';
-    this.knobs = def.params.map(p => control(this.cmd, this.owner, ins, p));
-    this.canvas = null; this.grFill = null; this.grText = null;
+    this.canvas = null; this.grFill = null; this.grText = null; this.eqx = null;
     let viz: HTMLElement | null = null;
-    if (ins.type === 'eq' || ins.type === 'geq' || ins.type === 'veq') { this.canvas = h('canvas', { class: 'pw-eq', 'aria-label': 'EQ curve' }); viz = this.canvas; }
+    let knobArea: HTMLElement;
+    if (ins.type === 'peq' || ins.type === 'eq') {
+      // point-and-drag EQ display (Pro EQ: free bands; Channel EQ: its four bands + low cut)
+      const ed = new EqEditor(this.cmd, this.owner, ins, p => control(this.cmd, this.owner, ins, p));
+      this.eqx = ed; viz = ed.el; knobArea = ed.panel;
+      this.knobs = [{ show: () => ed.show() }];
+    } else {
+      this.knobs = def.params.map(p => control(this.cmd, this.owner, ins, p));
+      knobArea = h('div', { class: 'pw-knobs' }, this.knobs.map(k => (k as any).el));
+    }
+    if (ins.type === 'geq' || ins.type === 'veq') { this.canvas = h('canvas', { class: 'pw-eq', 'aria-label': 'EQ curve' }); viz = this.canvas; }
     if (ins.type === 'analyzer') { this.canvas = h('canvas', { class: 'pw-eq pw-spec', 'aria-label': 'Spectrum' }); viz = this.canvas; }
     if (ins.type === 'transient') { /* gain-change display */ }
     if (ins.type === 'comp' || ins.type === 'limiter' || ins.type === 'gate' || ins.type === 'deesser' || ins.type === 'multi') {
@@ -214,8 +226,8 @@ export class PluginWindow {
       h('button', { class: 'pw-btn' + (ins.bypass ? '' : ' on'), 'aria-pressed': String(!ins.bypass), title: ins.bypass ? 'Enable' : 'Bypass', 'aria-label': ins.bypass ? 'Enable plug-in' : 'Bypass plug-in', onClick: () => this.cmd.toggleBypass(this.owner, ins.id) }, icon('power', 14)),
       h('button', { class: 'pw-btn', title: 'Remove plug-in', 'aria-label': 'Remove plug-in', onClick: () => this.cmd.removePlugin(this.owner, ins.id) }, 'Remove'),
       h('button', { class: 'pw-btn', title: 'Close', 'aria-label': 'Close plug-in window', onClick: () => this.close() }, '×'));
-    const win = h('div', { class: 'plugin-win' + (ins.bypass ? ' bypassed' : ''), role: 'dialog', 'aria-label': `${def.name} on ${ownerName}` },
-      head, viz, h('div', { class: 'pw-knobs' }, this.knobs.map(k => (k as any).el)));
+    const win = h('div', { class: 'plugin-win' + (ins.bypass ? ' bypassed' : '') + (this.eqx ? ' eq-win' : ''), role: 'dialog', 'aria-label': `${def.name} on ${ownerName}` },
+      head, viz, knobArea);
     this.mount(win, head);
   }
 
@@ -234,7 +246,7 @@ export class PluginWindow {
       h('button', { class: 'pw-btn', title: 'Remove plug-in', onClick: () => c.removePlugin(this.owner, ins.id) }, 'Remove'),
       h('button', { class: 'pw-btn', title: 'Close', 'aria-label': 'Close plug-in window', onClick: () => this.close() }, '×'));
     const win = h('div', { class: 'plugin-win native-win' + (ins.bypass ? ' bypassed' : ''), role: 'dialog', 'aria-label': `${ref.name} on ${ownerName}` }, head, status, list);
-    this.knobs = []; this.canvas = null; this.grFill = null; this.grText = null;
+    this.knobs = []; this.canvas = null; this.grFill = null; this.grText = null; this.eqx = null;
     this.mount(win, head);
     const showStatus = () => {
       const f = c.freezer;
@@ -331,6 +343,7 @@ export class PluginWindow {
   frame() {
     if (!this.el) return;
     const inst = this.cmd.engine.plugin(this.owner, this.insId);
+    if (this.eqx) { this.eqx.draw(inst as never); return; }
     if (this.canvas && inst?.eqNodes) this.drawEq(inst.eqNodes);
     if (this.canvas && inst?.analyser) this.drawSpectrum(inst.analyser);
     if (this.grFill && inst?.reduction) {
